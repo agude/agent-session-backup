@@ -1,0 +1,84 @@
+[project]
+name = "agent-session-backup"
+version = "0.0.0"
+description = "Hourly archive of Claude Code and Codex session transcripts to a NAS. The tool never deletes from the NAS."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "CC0-1.0"
+license-files = ["LICENSE.md"]
+authors = [{ name = "Alexander Gude" }]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.scripts]
+agent-session-backup = "agent_session_backup.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "actionlint-py>=1.7.12",
+    "mypy>=2.4",
+    "pre-commit>=4.6",
+    "pytest>=9.1",
+    "pytest-cov>=7.1",
+    "ruff>=0.17.0",
+    "zizmor>=1.30",
+]
+
+[tool.uv]
+# Ignore releases younger than a week, so a compromised upload has time to be
+# noticed and yanked before it reaches the lock. Dependabot's cooldown matches.
+exclude-newer = "7 days"
+# Dependabot uses uv 0.12.18 to update the lock on Python 3.11.
+# Use uv 0.13 or newer to download the final release of Python 3.15.
+required-version = ">=0.12.18"
+
+[tool.uv.build-backend]
+# Explicit, so the distribution name can differ from the import name.
+module-name = "agent_session_backup"
+
+[tool.ruff]
+# Match requires-python.
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "SIM", # flake8-simplify
+    "RET", # flake8-return
+    "RUF", # Ruff-specific
+    "PTH", # flake8-use-pathlib
+]
+ignore = [
+    "E501", # line too long (handled by the formatter)
+]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest]
+testpaths = ["tests"]
+addopts = ["--cov=agent_session_backup", "--cov-report=term-missing", "--cov-fail-under=90"]
+
+[tool.coverage.run]
+branch = true

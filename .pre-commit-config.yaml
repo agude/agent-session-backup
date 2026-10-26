@@ -1,0 +1,11 @@
+# `just lint` is the single definition of a clean tree; the hook only calls it.
+# pre-commit stashes unstaged changes first, so the hook checks what you commit.
+repos:
+  - repo: local
+    hooks:
+      - id: just-lint
+        name: just lint
+        entry: just lint
+        language: system
+        pass_filenames: false
+        always_run: true
