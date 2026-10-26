@@ -224,14 +224,21 @@ def test_partial_run_without_a_usable_previous_record_has_null_last_success(
     assert _record(world)["last_success"] is None
 
 
-def test_undefined_copy_case_is_reported_and_leaves_the_destination_alone(world: World) -> None:
+def test_same_size_destination_newer_than_tolerance_is_preserved(world: World) -> None:
     _run(world)
     source = world.claude / "history.jsonl"
     target = world.host_dir / "claude" / "history.jsonl"
+    old = b"o" * len(ORIGINAL)
+    target.write_bytes(old)
     stamp = source.stat().st_mtime
-    os.utime(target, (stamp + 10, stamp + 10))
-    assert _run(world, when=T0 + timedelta(hours=1)) == 1
-    assert any("no action" in entry["error"] for entry in _record(world)["errors"])
+    os.utime(target, (stamp + 2.1, stamp + 2.1))
+    assert _run(world, when=T0 + timedelta(hours=1)) == 0
+    record = _record(world)
+    assert record["status"] == "ok"
+    assert record["counts"]["preserved"] == 1
+    backups = sorted(path.name for path in target.parent.glob("*.bak"))
+    assert backups == ["history.jsonl.20261026T190000Z.bak"]
+    assert (target.parent / backups[0]).read_bytes() == old
     assert target.read_bytes() == ORIGINAL
 
 

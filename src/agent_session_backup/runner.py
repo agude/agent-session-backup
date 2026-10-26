@@ -14,7 +14,7 @@ from agent_session_backup import __version__, destination
 from agent_session_backup.config import Config
 from agent_session_backup.lock import LockBusy, run_lock
 from agent_session_backup.sources import SourceFile, iter_sources
-from agent_session_backup.transfer import Action, UnspecifiedCopyError, apply, decide
+from agent_session_backup.transfer import Action, apply, decide
 
 LOGGER_NAME = "agent_session_backup"
 LOG_FILE_NAME = "backup.log"
@@ -121,7 +121,7 @@ def check_pass(config: Config, *, verbose: bool = False) -> int:
     for source in iter_sources(config, record_error):
         try:
             action = decide(source.path.stat(), _stat_or_none(host_dir / source.relpath))
-        except (OSError, UnspecifiedCopyError) as error:
+        except OSError as error:
             errors.append((str(source.path), str(error)))
             continue
         counts[action] += 1
@@ -175,7 +175,7 @@ def _copy(source: SourceFile, host_dir: Path, started: datetime, tally: Tally) -
             tally.skipped += 1
             return
         outcome = apply(source.path, target, action, started)
-    except (OSError, UnspecifiedCopyError) as error:
+    except OSError as error:
         _record_error(tally, source.path, error)
         return
     if action is Action.COPY:

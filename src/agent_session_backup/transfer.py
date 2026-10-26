@@ -18,10 +18,6 @@ class Action(Enum):
     PRESERVE_AND_COPY = "preserve_and_copy"
 
 
-class UnspecifiedCopyError(Exception):
-    """The copy rules define no action for this destination state."""
-
-
 @dataclass(frozen=True)
 class Outcome:
     """What ``apply`` did: the bytes written and the .bak file it kept, if any."""
@@ -33,17 +29,15 @@ class Outcome:
 def decide(src: os.stat_result, dst: os.stat_result | None) -> Action:
     """Return the action for a source file and its destination (``None`` if missing).
 
-    The rules are the copy rules table in the plan:
+    The copy rules are:
 
     - Missing destination: copy.
     - Smaller destination: copy.
+    - Same size, mtimes within 2 s (inclusive): skip.
+    - Same size, source newer by more than 2 s: copy.
+    - Same size, destination newer by more than 2 s: preserve the destination
+      as a .bak file, then copy.
     - Larger destination: preserve the destination as a .bak file, then copy.
-    - Same size: skip when the mtimes differ by at most 2 s, copy when the
-      source is newer by more than 2 s.
-
-    The table has no row for a same-size destination that is more than 2 s
-    newer than the source. That case raises ``UnspecifiedCopyError`` so that
-    no behavior is chosen silently.
     """
     if dst is None or dst.st_size < src.st_size:
         return Action.COPY
@@ -54,10 +48,7 @@ def decide(src: os.stat_result, dst: os.stat_result | None) -> Action:
         return Action.SKIP
     if delta > TOLERANCE_SECONDS:
         return Action.COPY
-    raise UnspecifiedCopyError(
-        f"destination has the same size as the source and is "
-        f"{-delta:.1f} s newer; the copy rules define no action for this case"
-    )
+    return Action.PRESERVE_AND_COPY
 
 
 def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outcome:

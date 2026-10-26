@@ -148,9 +148,7 @@ Each host also has a `.last-run.json` record.
 | Same size, mtimes within 2 s | Skip. |
 | Same size, source newer by more than 2 s | Copy. |
 | Larger than the source | Rename the destination to `<name>.<UTC timestamp>.bak`, then copy. |
-| Same size, destination newer by more than 2 s | Do not copy. The run reports the file as an error. |
-
-The last row is an open case. The copy rules do not yet say what to do with it.
+| Same size, destination newer by more than 2 s | Rename the destination to `<name>.<UTC timestamp>.bak`, then copy. |
 
 Each copy is written to a temporary file, flushed to disk, and renamed into
 place. A reader sees either the old file or the new one.

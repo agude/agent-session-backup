@@ -8,7 +8,7 @@ from typing import IO, Any
 import pytest
 
 from agent_session_backup import transfer
-from agent_session_backup.transfer import Action, Outcome, UnspecifiedCopyError, apply, decide
+from agent_session_backup.transfer import Action, Outcome, apply, decide
 
 BASE_MTIME = 1_800_000_000.0
 NOW = datetime(2026, 10, 26, 18, 0, 0, tzinfo=UTC)
@@ -42,11 +42,16 @@ def test_decide_covers_each_row_of_the_copy_rules(
     assert decide(src, dst) is expected
 
 
-def test_same_size_destination_newer_than_tolerance_raises(tmp_path: Path) -> None:
-    src = write(tmp_path / "src", b"s" * 10, BASE_MTIME - 3.0)
-    dst = write(tmp_path / "dst", b"d" * 10, BASE_MTIME)
-    with pytest.raises(UnspecifiedCopyError, match="no action"):
-        decide(src, dst)
+def test_same_size_destination_2_1_s_newer_is_preserved(tmp_path: Path) -> None:
+    src = write(tmp_path / "src", b"s" * 10, BASE_MTIME)
+    dst = write(tmp_path / "dst", b"d" * 10, BASE_MTIME + 2.1)
+    assert decide(src, dst) is Action.PRESERVE_AND_COPY
+
+
+def test_same_size_destination_1_9_s_newer_is_skipped(tmp_path: Path) -> None:
+    src = write(tmp_path / "src", b"s" * 10, BASE_MTIME)
+    dst = write(tmp_path / "dst", b"d" * 10, BASE_MTIME + 1.9)
+    assert decide(src, dst) is Action.SKIP
 
 
 def test_copy_to_missing_destination_matches_source(tmp_path: Path) -> None:

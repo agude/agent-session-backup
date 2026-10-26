@@ -88,7 +88,7 @@ def test_verbose_check_lists_each_planned_copy(
     assert "copy claude/projects/a/s1.jsonl" in output
 
 
-def test_undefined_copy_case_is_listed_as_an_error(
+def test_same_size_newer_destination_is_planned_as_preserve_and_copy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     claude, archive = _homes(tmp_path)
@@ -97,11 +97,13 @@ def test_undefined_copy_case_is_listed_as_an_error(
     copy.parent.mkdir(parents=True)
     copy.write_bytes(ORIGINAL)
     stamp = (claude / "history.jsonl").stat().st_mtime
-    os.utime(copy, (stamp + 10, stamp + 10))
+    os.utime(copy, (stamp + 2.1, stamp + 2.1))
+    before = _tree(archive)
     assert main(["check"]) == 0
     output = capsys.readouterr().out
-    assert "errors: 1" in output
-    assert "no action" in output
+    assert "preserve_and_copy: 1" in output
+    assert "errors: 0" in output
+    assert _tree(archive) == before
 
 
 def test_check_reports_configuration_errors_and_exits_two(
@@ -127,3 +129,19 @@ def test_unreadable_directory_is_listed_as_an_error(
     finally:
         locked.chmod(0o700)
     assert "errors: 1" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+def test_destination_that_cannot_be_read_is_listed_as_an_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    claude, archive = _homes(tmp_path)
+    _configure(tmp_path, monkeypatch, claude, archive)
+    host_claude = archive / HOST / "claude"
+    host_claude.mkdir(parents=True)
+    host_claude.chmod(0)
+    try:
+        assert main(["check"]) == 0
+    finally:
+        host_claude.chmod(0o700)
+    assert "errors: 2" in capsys.readouterr().out
