@@ -3,8 +3,9 @@
 import argparse
 import sys
 from collections.abc import Callable, Sequence
+from datetime import timedelta
 
-from agent_session_backup import __version__, destination, paths, runner
+from agent_session_backup import __version__, destination, paths, runner, status
 from agent_session_backup.config import ConfigError, load
 
 DESCRIPTION = (
@@ -36,6 +37,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_parser.add_argument(
         "-v", "--verbose", action="store_true", help="list each planned copy and preserve"
+    )
+    status_parser = commands.add_parser("status", help="show the last run of every host")
+    status_parser.add_argument(
+        "--max-age",
+        type=_duration,
+        default=status.DEFAULT_MAX_AGE,
+        help="mark a host STALE when its last success is older than this, such as 48h",
     )
     return parser
 
@@ -79,10 +87,27 @@ def _run_check(args: argparse.Namespace) -> int:
     return runner.check_pass(config, verbose=args.verbose)
 
 
+def _duration(text: str) -> timedelta:
+    try:
+        return status.parse_duration(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _run_status(args: argparse.Namespace) -> int:
+    try:
+        config = load()
+    except ConfigError as error:
+        _report(str(error))
+        return 2
+    return status.report(config.dest_root, now=runner.utc_now(), max_age=args.max_age)
+
+
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "init": _run_init,
     "run": _run_run,
     "check": _run_check,
+    "status": _run_status,
 }
 
 
