@@ -1,5 +1,7 @@
 """Shared fixtures."""
 
+import logging
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -18,3 +20,13 @@ def isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     monkeypatch.setenv("AGENT_SESSION_BACKUP_CONFIG", str(home / "config.toml"))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
+
+
+@pytest.fixture(autouse=True)
+def reset_package_logging() -> Iterator[None]:
+    """Detach the package's log handlers after each test."""
+    yield
+    logger = logging.getLogger("agent_session_backup")
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()

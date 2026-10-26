@@ -4,7 +4,7 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 
-from agent_session_backup import __version__, destination
+from agent_session_backup import __version__, destination, paths, runner
 from agent_session_backup.config import ConfigError, load
 
 DESCRIPTION = (
@@ -23,6 +23,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-local",
         action="store_true",
         help="allow a destination that is not on a network share",
+    )
+    run_parser = commands.add_parser("run", help="perform one backup pass")
+    run_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="log every copy to backup.log"
+    )
+    run_parser.add_argument(
+        "--strict", action="store_true", help="exit 3 when the destination is unavailable"
     )
     return parser
 
@@ -46,7 +53,21 @@ def _run_init(args: argparse.Namespace) -> int:
     return 0
 
 
-_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {"init": _run_init}
+def _run_run(args: argparse.Namespace) -> int:
+    state_dir = paths.state_dir()
+    runner.configure_logging(state_dir, verbose=args.verbose)
+    try:
+        config = load()
+    except ConfigError as error:
+        runner.logger.error("configuration error: %s", error)
+        return 2
+    return runner.run_pass(config, state_dir, strict=args.strict)
+
+
+_COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "init": _run_init,
+    "run": _run_run,
+}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
