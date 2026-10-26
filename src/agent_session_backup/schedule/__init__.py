@@ -5,10 +5,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent_session_backup.schedule import cron
+from agent_session_backup.schedule import cron, launchd
+from agent_session_backup.schedule.commands import ScheduleError
 
 
-class UnsupportedPlatform(Exception):
+class UnsupportedPlatform(ScheduleError):
     """No scheduler backend exists for this platform."""
 
 
@@ -16,6 +17,8 @@ def install(executable: str) -> str:
     """Install or update the hourly job. Return ``installed``, ``updated``, or ``unchanged``."""
     if sys.platform.startswith("linux"):
         return cron.install(executable)
+    if sys.platform.startswith("darwin"):
+        return launchd.install(executable)
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 
@@ -23,6 +26,8 @@ def uninstall() -> str:
     """Remove the hourly job. Return ``removed``, or ``absent`` if there is no job."""
     if sys.platform.startswith("linux"):
         return cron.uninstall()
+    if sys.platform.startswith("darwin"):
+        return launchd.uninstall()
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 

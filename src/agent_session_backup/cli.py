@@ -8,7 +8,7 @@ from pathlib import Path
 
 from agent_session_backup import __version__, destination, paths, runner, schedule, status
 from agent_session_backup.config import ConfigError, load
-from agent_session_backup.schedule import cron
+from agent_session_backup.schedule.commands import ScheduleError
 
 DESCRIPTION = (
     "Hourly archive of Claude Code and Codex session transcripts to a NAS. "
@@ -119,7 +119,7 @@ def _run_install_schedule(args: argparse.Namespace) -> int:
         return 2
     try:
         print(schedule.install(executable))
-    except (schedule.UnsupportedPlatform, cron.CronError) as error:
+    except ScheduleError as error:
         _report(f"install-schedule: {error}")
         return 1
     return 0
@@ -128,7 +128,7 @@ def _run_install_schedule(args: argparse.Namespace) -> int:
 def _run_uninstall_schedule(args: argparse.Namespace) -> int:
     try:
         print(schedule.uninstall())
-    except (schedule.UnsupportedPlatform, cron.CronError) as error:
+    except ScheduleError as error:
         _report(f"uninstall-schedule: {error}")
         return 1
     return 0

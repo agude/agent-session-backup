@@ -7,6 +7,10 @@ from dataclasses import dataclass
 MISSING_PROGRAM_STATUS = 127
 
 
+class ScheduleError(Exception):
+    """A scheduler cannot be used, or its state is damaged."""
+
+
 @dataclass(frozen=True)
 class CommandResult:
     """The exit status and captured output of one command."""

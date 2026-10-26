@@ -1,13 +1,13 @@
 """Manage the agent-session-backup block in the user's crontab on Linux."""
 
-from agent_session_backup.schedule.commands import Runner, run_command
+from agent_session_backup.schedule.commands import Runner, ScheduleError, run_command
 
 BEGIN = "# BEGIN agent-session-backup (managed by `agent-session-backup install-schedule`)"
 END = "# END agent-session-backup"
 _NO_CRONTAB = "no crontab for"
 
 
-class CronError(Exception):
+class CronError(ScheduleError):
     """The crontab cannot be read or written, or its managed block is damaged."""
 
 
