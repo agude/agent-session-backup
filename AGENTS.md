@@ -29,6 +29,18 @@ CI pass.
 | `just lock` | Updates `uv.lock` after a dependency change. |
 | `just release <bump>` | Bumps the version, commits, and tags. Does not push. |
 
+## Invariants
+
+- Nothing under `dest_root` is ever deleted. `transfer.py` removes only the
+  `.<name>.<pid>.tmp` files that it wrote, and a test records every unlink to
+  check this.
+- Add a source only by extending an allowlist in `sources.py`. No other code
+  may walk the tool homes or copy a path that the allowlist does not name.
+- Tests never touch the real home directory, the crontab, `launchctl`, or the
+  NAS. `tests/conftest.py` points the environment at a temporary directory, and
+  fake `crontab` and `launchctl` programs or injected runners stand in for the
+  real ones.
+
 ## Rules
 
 - Use uv for every Python operation. Add dependencies with `uv add` or
