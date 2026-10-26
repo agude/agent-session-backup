@@ -12,8 +12,8 @@ EXE = "/home/agude/.local/bin/agent-session-backup"
 BLOCK = "\n".join((cron.BEGIN, f"@hourly {EXE} run", cron.END))
 ORIGINALS = [
     "",
-    "MAILTO=ops@example.com\n@daily /bin/true\n",
-    "MAILTO=ops@example.com\n@daily /bin/true",
+    "MAILTO=ops@mail.invalid\n@daily /bin/true\n",
+    "MAILTO=ops@mail.invalid\n@daily /bin/true",
     "@daily /bin/true\n\n",
 ]
 
@@ -53,19 +53,19 @@ def test_different_executable_updates_the_single_block(fake_crontab: FakeCrontab
 def test_update_keeps_a_block_that_ends_the_file_without_a_newline(
     fake_crontab: FakeCrontab,
 ) -> None:
-    fake_crontab.write("MAILTO=ops@example.com")
+    fake_crontab.write("MAILTO=ops@mail.invalid")
     cron.install(EXE)
     assert cron.install("/usr/local/bin/agent-session-backup") == "updated"
     assert fake_crontab.text().endswith(cron.END)
     assert cron.uninstall() == "removed"
-    assert fake_crontab.text() == "MAILTO=ops@example.com"
+    assert fake_crontab.text() == "MAILTO=ops@mail.invalid"
 
 
 def test_uninstall_reports_removed_then_absent(fake_crontab: FakeCrontab) -> None:
-    fake_crontab.write("MAILTO=ops@example.com\n")
+    fake_crontab.write("MAILTO=ops@mail.invalid\n")
     cron.install(EXE)
     assert cron.uninstall() == "removed"
-    assert fake_crontab.text() == "MAILTO=ops@example.com\n"
+    assert fake_crontab.text() == "MAILTO=ops@mail.invalid\n"
     assert cron.uninstall() == "absent"
 
 
