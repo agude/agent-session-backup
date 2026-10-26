@@ -31,9 +31,10 @@ CI pass.
 
 ## Invariants
 
-- Nothing under `dest_root` is ever deleted. `transfer.py` removes only the
-  `.<name>.<pid>.tmp` files that it wrote, and a test records every unlink to
-  check this.
+- The tool never deletes a backed-up file or a `.bak` file under `dest_root`.
+  It removes only its own temporary files: `.<name>.<pid>.tmp` files that a
+  copy or the `.last-run.json` write creates, and stale ones that an
+  interrupted copy left behind. Tests record every unlink to check this.
 - Add a source only by extending an allowlist in `sources.py`. No other code
   may walk the tool homes or copy a path that the allowlist does not name.
 - Tests never touch the real home directory, the crontab, `launchctl`, or the

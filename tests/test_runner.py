@@ -267,3 +267,39 @@ def test_verbose_logs_one_debug_line_per_copy(world: World) -> None:
 def test_without_verbose_the_log_has_no_debug_lines(world: World) -> None:
     _run(world)
     assert "DEBUG" not in _log(world)
+
+
+def test_failed_last_run_write_leaves_no_temporary_file(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _run(world)
+    unlinked: list[str] = []
+    real_unlink = os.unlink
+    real_remove = os.remove
+    real_path_unlink = Path.unlink
+
+    def spy_unlink(path: Any, *args: Any, **kwargs: Any) -> None:
+        unlinked.append(os.fspath(path))
+        real_unlink(path, *args, **kwargs)
+
+    def spy_remove(path: Any, *args: Any, **kwargs: Any) -> None:
+        unlinked.append(os.fspath(path))
+        real_remove(path, *args, **kwargs)
+
+    def spy_path_unlink(self: Path, missing_ok: bool = False) -> None:
+        unlinked.append(str(self))
+        real_path_unlink(self, missing_ok=missing_ok)
+
+    def failing_fsync(fd: int) -> None:
+        raise OSError("simulated fsync failure")
+
+    monkeypatch.setattr(os, "unlink", spy_unlink)
+    monkeypatch.setattr(os, "remove", spy_remove)
+    monkeypatch.setattr(Path, "unlink", spy_path_unlink)
+    # The second pass skips every file, so the record write is the only fsync in it.
+    monkeypatch.setattr(os, "fsync", failing_fsync)
+    with pytest.raises(OSError, match="simulated fsync failure"):
+        _run(world, when=T0 + timedelta(hours=1))
+    assert list(world.host_dir.glob(".last-run.json.*.tmp")) == []
+    assert unlinked
+    assert all(path.endswith(".tmp") for path in unlinked)
