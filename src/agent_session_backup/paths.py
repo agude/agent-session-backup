@@ -8,7 +8,8 @@ APP_NAME = "agent-session-backup"
 CONFIG_FILE_VARIABLE = "AGENT_SESSION_BACKUP_CONFIG"
 
 
-def _is_macos() -> bool:
+def is_macos() -> bool:
+    """Return whether the running platform is macOS."""
     return sys.platform == "darwin"
 
 
@@ -46,6 +47,6 @@ def state_dir() -> Path:
 
     macOS keeps logs in ``~/Library/Logs`` and ignores ``XDG_STATE_HOME``.
     """
-    if _is_macos():
+    if is_macos():
         return Path.home() / "Library" / "Logs" / APP_NAME
     return _xdg_app_dir("XDG_STATE_HOME", ".local/state")
