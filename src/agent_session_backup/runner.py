@@ -93,6 +93,48 @@ def run_pass(
         return EXIT_OK
 
 
+def check_pass(config: Config, *, verbose: bool = False) -> int:
+    """Report what a run would copy, taking no lock and writing nothing.
+
+    Only ``decide()`` runs, so no file is read or written. Return 3 when the
+    destination is unavailable and 0 otherwise. Per-file errors are printed and
+    counted, but they do not change the exit status.
+    """
+    print(f"host: {config.host}")
+    print(f"dest_root: {config.dest_root}")
+    print(
+        f"claude_home: {config.claude_home} ({'enabled' if config.sources.claude else 'disabled'})"
+    )
+    print(f"codex_home: {config.codex_home} ({'enabled' if config.sources.codex else 'disabled'})")
+    status = destination.check(config.dest_root)
+    if isinstance(status, destination.Unavailable):
+        print(f"destination: unavailable: {status.reason}")
+        return EXIT_UNAVAILABLE
+    print("destination: available")
+    host_dir = config.dest_root / config.host
+    counts = dict.fromkeys(Action, 0)
+    errors: list[tuple[str, str]] = []
+
+    def record_error(path: Path, error: OSError) -> None:
+        errors.append((str(path), str(error)))
+
+    for source in iter_sources(config, record_error):
+        try:
+            action = decide(source.path.stat(), _stat_or_none(host_dir / source.relpath))
+        except (OSError, UnspecifiedCopyError) as error:
+            errors.append((str(source.path), str(error)))
+            continue
+        counts[action] += 1
+        if verbose and action is not Action.SKIP:
+            print(f"{action.value} {source.relpath.as_posix()}")
+    for action in Action:
+        print(f"{action.value}: {counts[action]}")
+    print(f"errors: {len(errors)}")
+    for path_text, message in errors:
+        print(f"error {path_text}: {message}")
+    return EXIT_OK
+
+
 def _run_locked(
     config: Config, started: datetime, now: Callable[[], datetime], *, strict: bool
 ) -> int:

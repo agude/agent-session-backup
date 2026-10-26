@@ -31,6 +31,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument(
         "--strict", action="store_true", help="exit 3 when the destination is unavailable"
     )
+    check_parser = commands.add_parser(
+        "check", help="show what a run would copy, without writing anything"
+    )
+    check_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="list each planned copy and preserve"
+    )
     return parser
 
 
@@ -64,9 +70,19 @@ def _run_run(args: argparse.Namespace) -> int:
     return runner.run_pass(config, state_dir, strict=args.strict)
 
 
+def _run_check(args: argparse.Namespace) -> int:
+    try:
+        config = load()
+    except ConfigError as error:
+        _report(str(error))
+        return 2
+    return runner.check_pass(config, verbose=args.verbose)
+
+
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "init": _run_init,
     "run": _run_run,
+    "check": _run_check,
 }
 
 
