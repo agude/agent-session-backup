@@ -4,9 +4,11 @@ import argparse
 import sys
 from collections.abc import Callable, Sequence
 from datetime import timedelta
+from pathlib import Path
 
-from agent_session_backup import __version__, destination, paths, runner, status
+from agent_session_backup import __version__, destination, paths, runner, schedule, status
 from agent_session_backup.config import ConfigError, load
+from agent_session_backup.schedule import cron
 
 DESCRIPTION = (
     "Hourly archive of Claude Code and Codex session transcripts to a NAS. "
@@ -45,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=status.DEFAULT_MAX_AGE,
         help="mark a host STALE when its last success is older than this, such as 48h",
     )
+    install_parser = commands.add_parser("install-schedule", help="install the hourly job")
+    install_parser.add_argument(
+        "--executable",
+        help="absolute path of the program that the job runs (default: this program)",
+    )
+    commands.add_parser("uninstall-schedule", help="remove the hourly job")
     return parser
 
 
@@ -103,11 +111,36 @@ def _run_status(args: argparse.Namespace) -> int:
     return status.report(config.dest_root, now=runner.utc_now(), max_age=args.max_age)
 
 
+def _run_install_schedule(args: argparse.Namespace) -> int:
+    executable = args.executable or str(Path(sys.argv[0]).absolute())
+    problem = schedule.validate_executable(executable)
+    if problem is not None:
+        _report(f"install-schedule: {problem}")
+        return 2
+    try:
+        print(schedule.install(executable))
+    except (schedule.UnsupportedPlatform, cron.CronError) as error:
+        _report(f"install-schedule: {error}")
+        return 1
+    return 0
+
+
+def _run_uninstall_schedule(args: argparse.Namespace) -> int:
+    try:
+        print(schedule.uninstall())
+    except (schedule.UnsupportedPlatform, cron.CronError) as error:
+        _report(f"uninstall-schedule: {error}")
+        return 1
+    return 0
+
+
 _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
     "init": _run_init,
     "run": _run_run,
     "check": _run_check,
     "status": _run_status,
+    "install-schedule": _run_install_schedule,
+    "uninstall-schedule": _run_uninstall_schedule,
 }
 
 
