@@ -1,6 +1,7 @@
 """Command-line interface for agent-session-backup."""
 
 import argparse
+import os
 import sys
 from collections.abc import Callable, Sequence
 from datetime import timedelta
@@ -112,7 +113,8 @@ def _run_status(args: argparse.Namespace) -> int:
 
 
 def _run_install_schedule(args: argparse.Namespace) -> int:
-    executable = args.executable or str(Path(sys.argv[0]).absolute())
+    # Normalize like os.path.abspath, collapsing "..", without resolving symlinks.
+    executable = args.executable or os.path.normpath(Path.cwd() / sys.argv[0])
     problem = schedule.validate_executable(executable)
     if problem is not None:
         _report(f"install-schedule: {problem}")

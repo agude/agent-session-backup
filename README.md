@@ -91,9 +91,10 @@ agent-session-backup uninstall-schedule
   when its last success is older than `--max-age`. The default is `48h`. The
   value is a count with a unit: `s`, `m`, `h`, or `d`, such as `72h`.
 - `install-schedule` installs or updates the hourly job. `--executable` defaults
-  to this program's path. The path must be absolute, executable, and outside the
-  system temporary directory. The command prints one result word: `installed`,
-  `updated`, or `unchanged`.
+  to this program's path. The path must be absolute, executable, outside a
+  virtual environment, and outside the system temporary directory. Run it from
+  the installed tool, not with `uv run` or `uvx`. The command prints one result
+  word: `installed`, `updated`, or `unchanged`.
 - `uninstall-schedule` removes the hourly job and prints `removed` or `absent`.
 
 Exit codes:

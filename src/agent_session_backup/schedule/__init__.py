@@ -38,6 +38,8 @@ def validate_executable(executable: str) -> str | None:
         return f"the executable must be an absolute path: {executable}"
     if not path.is_file() or not os.access(path, os.X_OK):
         return f"the executable is not an executable file: {executable}"
+    if (path.parent.parent / "pyvenv.cfg").is_file():
+        return f"the executable is inside a virtual environment: {executable}"
     temporary = Path(tempfile.gettempdir()).resolve()
     if path.resolve().is_relative_to(temporary):
         return f"the executable is under the temporary directory: {executable}"
