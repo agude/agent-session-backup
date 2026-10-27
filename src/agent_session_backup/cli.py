@@ -53,7 +53,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--executable",
         help="absolute path of the program that the job runs (default: this program)",
     )
-    commands.add_parser("uninstall-schedule", help="remove the hourly job")
+    install_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the result word without changing the schedule",
+    )
+    uninstall_parser = commands.add_parser("uninstall-schedule", help="remove the hourly job")
+    uninstall_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the result word without changing the schedule",
+    )
     return parser
 
 
@@ -120,7 +130,7 @@ def _run_install_schedule(args: argparse.Namespace) -> int:
         _report(f"install-schedule: {problem}")
         return 2
     try:
-        print(schedule.install(executable))
+        print(schedule.install(executable, dry_run=args.dry_run))
     except ScheduleError as error:
         _report(f"install-schedule: {error}")
         return 1
@@ -129,7 +139,7 @@ def _run_install_schedule(args: argparse.Namespace) -> int:
 
 def _run_uninstall_schedule(args: argparse.Namespace) -> int:
     try:
-        print(schedule.uninstall())
+        print(schedule.uninstall(dry_run=args.dry_run))
     except ScheduleError as error:
         _report(f"uninstall-schedule: {error}")
         return 1

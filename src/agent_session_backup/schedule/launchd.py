@@ -42,11 +42,18 @@ def build_plist(executable: str, log_path: Path) -> bytes:
     )
 
 
-def install(executable: str, runner: Runner = run_command, uid: int | None = None) -> str:
+def install(
+    executable: str,
+    runner: Runner = run_command,
+    uid: int | None = None,
+    *,
+    dry_run: bool = False,
+) -> str:
     """Install or update the LaunchAgent. Return ``installed``, ``updated``, or ``unchanged``.
 
     The job is reloaded unless the plist is identical and launchd reports the job
-    as loaded.
+    as loaded. With ``dry_run``, return the same result, write no file, and run
+    only ``launchctl print``.
     """
     domain = f"gui/{os.getuid() if uid is None else uid}"
     target = f"{domain}/{LABEL}"
@@ -59,6 +66,8 @@ def install(executable: str, runner: Runner = run_command, uid: int | None = Non
         and runner(["launchctl", "print", target], None).returncode == 0
     ):
         return "unchanged"
+    if dry_run:
+        return "updated" if existed else "installed"
     plist.parent.mkdir(parents=True, exist_ok=True)
     paths.state_dir().mkdir(parents=True, exist_ok=True)
     plist.write_bytes(content)
@@ -67,8 +76,15 @@ def install(executable: str, runner: Runner = run_command, uid: int | None = Non
     return "updated" if existed else "installed"
 
 
-def uninstall(runner: Runner = run_command, uid: int | None = None) -> str:
-    """Stop the job and remove its plist. Return ``removed``, or ``absent`` if there was none."""
+def uninstall(
+    runner: Runner = run_command, uid: int | None = None, *, dry_run: bool = False
+) -> str:
+    """Stop the job and remove its plist. Return ``removed``, or ``absent`` if there was none.
+
+    With ``dry_run``, return the same result and run no ``launchctl`` command.
+    """
+    if dry_run:
+        return "removed" if plist_path().exists() else "absent"
     domain = f"gui/{os.getuid() if uid is None else uid}"
     _bootout(runner, f"{domain}/{LABEL}")
     plist = plist_path()

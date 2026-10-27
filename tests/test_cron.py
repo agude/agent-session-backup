@@ -130,3 +130,31 @@ def test_failed_write_is_an_error() -> None:
 def test_default_runner_is_the_real_command_runner() -> None:
     assert cron.install.__defaults__ == (run_command,)
     assert cron.uninstall.__defaults__ == (run_command,)
+
+
+def test_dry_run_install_reports_each_result_and_never_writes(fake_crontab: FakeCrontab) -> None:
+    assert cron.install(EXE, dry_run=True) == "installed"
+    assert fake_crontab.writes() == 0
+    cron.install(EXE)
+    writes = fake_crontab.writes()
+    before = fake_crontab.text()
+    assert cron.install(EXE, dry_run=True) == "unchanged"
+    assert cron.install("/opt/agent-session-backup", dry_run=True) == "updated"
+    assert fake_crontab.writes() == writes
+    assert fake_crontab.text() == before
+
+
+def test_dry_run_uninstall_reports_each_result_and_never_writes(fake_crontab: FakeCrontab) -> None:
+    assert cron.uninstall(dry_run=True) == "absent"
+    cron.install(EXE)
+    writes = fake_crontab.writes()
+    before = fake_crontab.text()
+    assert cron.uninstall(dry_run=True) == "removed"
+    assert fake_crontab.writes() == writes
+    assert fake_crontab.text() == before
+
+
+def test_dry_run_still_refuses_a_damaged_crontab(fake_crontab: FakeCrontab) -> None:
+    fake_crontab.write(BLOCK + "\n" + BLOCK + "\n")
+    with pytest.raises(cron.CronError, match="more than one"):
+        cron.install(EXE, dry_run=True)

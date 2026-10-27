@@ -11,11 +11,12 @@ class CronError(ScheduleError):
     """The crontab cannot be read or written, or its managed block is damaged."""
 
 
-def install(executable: str, runner: Runner = run_command) -> str:
+def install(executable: str, runner: Runner = run_command, *, dry_run: bool = False) -> str:
     """Add the hourly block, or update it to run ``executable``.
 
     Return ``installed``, ``updated``, or ``unchanged``. Lines outside the block
     are kept byte for byte, and the crontab is written only when it changes.
+    With ``dry_run``, return the same result and write nothing.
     """
     current = _read(runner)
     block = _block(executable)
@@ -28,16 +29,22 @@ def install(executable: str, runner: Runner = run_command) -> str:
         result = "updated"
     if new == current:
         return "unchanged"
-    _write(new, runner)
+    if not dry_run:
+        _write(new, runner)
     return result
 
 
-def uninstall(runner: Runner = run_command) -> str:
-    """Remove the managed block. Return ``removed``, or ``absent`` if there is none."""
+def uninstall(runner: Runner = run_command, *, dry_run: bool = False) -> str:
+    """Remove the managed block. Return ``removed``, or ``absent`` if there is none.
+
+    With ``dry_run``, return the same result and write nothing.
+    """
     current = _read(runner)
     span = _find_block(current)
     if span is None:
         return "absent"
+    if dry_run:
+        return "removed"
     start, end = span
     before, after = current[:start], current[end:]
     # install() put a newline before a block that ends the file without one.

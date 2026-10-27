@@ -76,8 +76,8 @@ agent-session-backup init [--allow-local]
 agent-session-backup run [-v] [--strict]
 agent-session-backup check [-v]
 agent-session-backup status [--max-age MAX_AGE]
-agent-session-backup install-schedule [--executable EXECUTABLE]
-agent-session-backup uninstall-schedule
+agent-session-backup install-schedule [--executable EXECUTABLE] [--dry-run]
+agent-session-backup uninstall-schedule [--dry-run]
 ```
 
 - `init` creates `dest_root` and its sentinel file. An existing sentinel is left
@@ -96,6 +96,8 @@ agent-session-backup uninstall-schedule
   the installed tool, not with `uv run` or `uvx`. The command prints one result
   word: `installed`, `updated`, or `unchanged`.
 - `uninstall-schedule` removes the hourly job and prints `removed` or `absent`.
+- `--dry-run` on either schedule command prints the word that the command
+  would print and changes nothing. Ansible uses it in check mode.
 
 Exit codes:
 

@@ -118,7 +118,38 @@ def test_launchd_errors_are_schedule_errors() -> None:
 
 def test_schedule_dispatches_to_launchd_on_macos(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin")
-    monkeypatch.setattr(launchd, "install", lambda executable: "installed")
-    monkeypatch.setattr(launchd, "uninstall", lambda: "absent")
+    monkeypatch.setattr(launchd, "install", lambda executable, dry_run: "installed")
+    monkeypatch.setattr(launchd, "uninstall", lambda dry_run: "absent")
     assert schedule.install(EXE) == "installed"
     assert schedule.uninstall() == "absent"
+
+
+def test_dry_run_install_reports_installed_and_changes_nothing(fake: FakeLaunchctl) -> None:
+    assert launchd.install(EXE, runner=fake, uid=UID, dry_run=True) == "installed"
+    assert not launchd.plist_path().exists()
+    assert fake.verbs() == []
+
+
+def test_dry_run_install_reports_updated_for_a_changed_executable(fake: FakeLaunchctl) -> None:
+    launchd.install(EXE, runner=fake, uid=UID)
+    before = launchd.plist_path().read_bytes()
+    fake.calls.clear()
+    new_exe = "/opt/agent-session-backup"
+    assert launchd.install(new_exe, runner=fake, uid=UID, dry_run=True) == "updated"
+    assert launchd.plist_path().read_bytes() == before
+    assert "bootout" not in fake.verbs()
+    assert "bootstrap" not in fake.verbs()
+
+
+def test_dry_run_install_reports_unchanged(fake: FakeLaunchctl) -> None:
+    launchd.install(EXE, runner=fake, uid=UID)
+    assert launchd.install(EXE, runner=fake, uid=UID, dry_run=True) == "unchanged"
+
+
+def test_dry_run_uninstall_reports_without_removing(fake: FakeLaunchctl) -> None:
+    assert launchd.uninstall(runner=fake, uid=UID, dry_run=True) == "absent"
+    launchd.install(EXE, runner=fake, uid=UID)
+    fake.calls.clear()
+    assert launchd.uninstall(runner=fake, uid=UID, dry_run=True) == "removed"
+    assert launchd.plist_path().exists()
+    assert fake.verbs() == []

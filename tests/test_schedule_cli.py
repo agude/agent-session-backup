@@ -153,3 +153,21 @@ def test_unsupported_platform_exits_one(
     assert main(["install-schedule", "--executable", str(program)]) == 1
     assert "no scheduler backend" in capsys.readouterr().err
     assert main(["uninstall-schedule"]) == 1
+
+
+def test_dry_run_flags_print_the_result_and_leave_the_crontab_alone(
+    fake_crontab: FakeCrontab, program: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["install-schedule", "--dry-run", "--executable", str(program)]) == 0
+    assert capsys.readouterr().out == "installed\n"
+    assert not fake_crontab.state.exists()
+    assert main(["uninstall-schedule", "--dry-run"]) == 0
+    assert capsys.readouterr().out == "absent\n"
+    assert main(["install-schedule", "--executable", str(program)]) == 0
+    capsys.readouterr()
+    before = fake_crontab.text()
+    assert main(["install-schedule", "--dry-run", "--executable", str(program)]) == 0
+    assert capsys.readouterr().out == "unchanged\n"
+    assert main(["uninstall-schedule", "--dry-run"]) == 0
+    assert capsys.readouterr().out == "removed\n"
+    assert fake_crontab.text() == before

@@ -13,21 +13,27 @@ class UnsupportedPlatform(ScheduleError):
     """No scheduler backend exists for this platform."""
 
 
-def install(executable: str) -> str:
-    """Install or update the hourly job. Return ``installed``, ``updated``, or ``unchanged``."""
+def install(executable: str, *, dry_run: bool = False) -> str:
+    """Install or update the hourly job. Return ``installed``, ``updated``, or ``unchanged``.
+
+    With ``dry_run``, return the result that an install would have and change nothing.
+    """
     if sys.platform.startswith("linux"):
-        return cron.install(executable)
+        return cron.install(executable, dry_run=dry_run)
     if sys.platform.startswith("darwin"):
-        return launchd.install(executable)
+        return launchd.install(executable, dry_run=dry_run)
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 
-def uninstall() -> str:
-    """Remove the hourly job. Return ``removed``, or ``absent`` if there is no job."""
+def uninstall(*, dry_run: bool = False) -> str:
+    """Remove the hourly job. Return ``removed``, or ``absent`` if there is no job.
+
+    With ``dry_run``, return the result that an uninstall would have and change nothing.
+    """
     if sys.platform.startswith("linux"):
-        return cron.uninstall()
+        return cron.uninstall(dry_run=dry_run)
     if sys.platform.startswith("darwin"):
-        return launchd.uninstall()
+        return launchd.uninstall(dry_run=dry_run)
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 
