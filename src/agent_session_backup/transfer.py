@@ -64,8 +64,8 @@ def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outc
     failed read leaves it untouched.
 
     Raise ``MtimeNotKeptError`` after the copy is complete if the filesystem
-    did not keep an mtime, on the destination or on the .bak file. The bytes
-    are in place either way.
+    could not set, verify, or keep an mtime, on the destination or on the
+    .bak file. The bytes are in place either way.
     """
     if action is Action.SKIP:
         return Outcome(bytes_copied=0, backup=None)
@@ -92,10 +92,15 @@ def _rename_keeping_mtime(source: Path, target: Path, mtime_ns: int) -> bool:
 
     The mtime is set after the rename, because a rename on a CIFS mount resets
     it. Return whether the filesystem kept the mtime, within the copy tolerance.
+    Metadata errors return False so a .bak timestamp failure cannot prevent
+    the new destination from being installed. Rename errors still propagate.
     """
     source.replace(target)
-    os.utime(target, ns=(mtime_ns, mtime_ns))
-    kept_ns = target.stat().st_mtime_ns
+    try:
+        os.utime(target, ns=(mtime_ns, mtime_ns))
+        kept_ns = target.stat().st_mtime_ns
+    except OSError:
+        return False
     return abs(kept_ns - mtime_ns) <= TOLERANCE_SECONDS * 1_000_000_000
 
 

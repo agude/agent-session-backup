@@ -1,5 +1,6 @@
 """Tests for copy decisions and atomic copies."""
 
+import errno
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -133,6 +134,31 @@ def test_unkept_backup_mtime_is_reported_with_the_destination(
 def test_mtime_not_kept_is_an_os_error() -> None:
     """The runner records OSError per file, so this error makes the run partial."""
     assert issubclass(transfer.MtimeNotKeptError, OSError)
+
+
+@pytest.mark.parametrize("failed_name", [BACKUP_NAME, "s1.jsonl"])
+def test_timestamp_error_is_reported_after_installing_the_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_name: str
+) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"new\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, b"older content\n")
+    real_utime = os.utime
+
+    def rejecting_utime(path: Path, *args: Any, **kwargs: Any) -> None:
+        if path.name == failed_name:
+            raise OSError(errno.EOPNOTSUPP, "timestamp updates unsupported")
+        real_utime(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "utime", rejecting_utime)
+    with pytest.raises(OSError) as raised:
+        apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert dst.read_bytes() == b"new\n"
+    assert (dst.parent / BACKUP_NAME).read_bytes() == b"older content\n"
+    assert sorted(path.name for path in dst.parent.iterdir()) == ["s1.jsonl", BACKUP_NAME]
+    assert isinstance(raised.value, transfer.MtimeNotKeptError)
+    assert failed_name in str(raised.value)
 
 
 def test_decide_skips_the_pair_after_a_copy(tmp_path: Path) -> None:
