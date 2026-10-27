@@ -54,9 +54,10 @@ def decide(src: os.stat_result, dst: os.stat_result | None) -> Action:
 def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outcome:
     """Carry out an action. ``now`` is UTC and names the .bak file.
 
-    The source is streamed into a temporary sibling, which is fsynced, given the
-    source mtime, and renamed over the destination. The destination changes only
-    after the source has been read in full, so a failed read leaves it untouched.
+    The source is streamed into a temporary sibling, which is fsynced and
+    renamed over the destination. The destination then gets the source mtime.
+    The destination changes only after the source has been read in full, so a
+    failed read leaves it untouched.
     """
     if action is Action.SKIP:
         return Outcome(bytes_copied=0, backup=None)
@@ -64,9 +65,11 @@ def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outc
     _remove_stale_temporaries(dst_path)
     temporary = _temporary_path(dst_path)
     try:
-        copied = _write_temporary(src_path, temporary)
+        copied, mtime_ns = _write_temporary(src_path, temporary)
         backup = _preserve(dst_path, now) if action is Action.PRESERVE_AND_COPY else None
         temporary.replace(dst_path)
+        # Set the mtime after the rename: a rename on a CIFS mount resets it.
+        os.utime(dst_path, ns=(mtime_ns, mtime_ns))
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
@@ -85,8 +88,12 @@ def _remove_stale_temporaries(dst_path: Path) -> None:
             sibling.unlink(missing_ok=True)
 
 
-def _write_temporary(src_path: Path, temporary: Path) -> int:
-    """Copy the source into ``temporary`` in one read and return the bytes written."""
+def _write_temporary(src_path: Path, temporary: Path) -> tuple[int, int]:
+    """Copy the source into ``temporary`` in one read.
+
+    Return the bytes written and the source mtime in nanoseconds, taken when
+    the source was opened.
+    """
     copied = 0
     with src_path.open("rb") as source:
         source_stat = os.fstat(source.fileno())
@@ -96,8 +103,7 @@ def _write_temporary(src_path: Path, temporary: Path) -> int:
                 copied += len(chunk)
             target.flush()
             os.fsync(target.fileno())
-    os.utime(temporary, ns=(source_stat.st_mtime_ns, source_stat.st_mtime_ns))
-    return copied
+    return copied, source_stat.st_mtime_ns
 
 
 def _preserve(dst_path: Path, now: datetime) -> Path:

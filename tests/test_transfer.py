@@ -63,6 +63,26 @@ def test_copy_to_missing_destination_matches_source(tmp_path: Path) -> None:
     assert abs(dst.stat().st_mtime - source_stat.st_mtime) < 1
 
 
+def test_destination_gets_the_source_mtime_when_rename_resets_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rename on a CIFS mount sets the mtime to the current time. Simulate that."""
+    real_replace = Path.replace
+
+    def resetting_replace(self: Path, target: Any) -> Path:
+        result = real_replace(self, target)
+        os.utime(target)
+        return result
+
+    monkeypatch.setattr(Path, "replace", resetting_replace)
+    source = tmp_path / "src.jsonl"
+    source_stat = write(source, b"hello\n")
+    dst = tmp_path / "archive" / "s1.jsonl"
+    apply(source, dst, Action.COPY, NOW)
+    assert dst.stat().st_mtime_ns == source_stat.st_mtime_ns
+    assert decide(source.stat(), dst.stat()) is Action.SKIP
+
+
 def test_decide_skips_the_pair_after_a_copy(tmp_path: Path) -> None:
     source = tmp_path / "src.jsonl"
     write(source, b"hello\n")
