@@ -1,6 +1,6 @@
 [project]
 name = "agent-session-backup"
-version = "0.0.0"
+version = "0.1.0"
 description = "Hourly archive of Claude Code and Codex session transcripts to a NAS. The tool never deletes from the NAS."
 readme = "README.md"
 requires-python = ">=3.11"
