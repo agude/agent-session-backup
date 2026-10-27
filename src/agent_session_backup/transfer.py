@@ -18,6 +18,10 @@ class Action(Enum):
     PRESERVE_AND_COPY = "preserve_and_copy"
 
 
+class MtimeNotKeptError(OSError):
+    """The filesystem did not keep the mtime that was set on a file."""
+
+
 @dataclass(frozen=True)
 class Outcome:
     """What ``apply`` did: the bytes written and the .bak file it kept, if any."""
@@ -58,6 +62,10 @@ def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outc
     renamed over the destination. The destination then gets the source mtime.
     The destination changes only after the source has been read in full, so a
     failed read leaves it untouched.
+
+    Raise ``MtimeNotKeptError`` after the copy is complete if the filesystem
+    did not keep an mtime, on the destination or on the .bak file. The bytes
+    are in place either way.
     """
     if action is Action.SKIP:
         return Outcome(bytes_copied=0, backup=None)
@@ -67,13 +75,28 @@ def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outc
     try:
         copied, mtime_ns = _write_temporary(src_path, temporary)
         backup = _preserve(dst_path, now) if action is Action.PRESERVE_AND_COPY else None
-        temporary.replace(dst_path)
-        # Set the mtime after the rename: a rename on a CIFS mount resets it.
-        os.utime(dst_path, ns=(mtime_ns, mtime_ns))
+        unkept = [] if _rename_keeping_mtime(temporary, dst_path, mtime_ns) else [dst_path]
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
-    return Outcome(bytes_copied=copied, backup=backup)
+    if backup is not None and not backup.kept_mtime:
+        unkept.insert(0, backup.path)
+    if unkept:
+        names = ", ".join(str(path) for path in unkept)
+        raise MtimeNotKeptError(f"the filesystem did not keep the mtime of {names}")
+    return Outcome(bytes_copied=copied, backup=None if backup is None else backup.path)
+
+
+def _rename_keeping_mtime(source: Path, target: Path, mtime_ns: int) -> bool:
+    """Rename ``source`` to ``target`` and give ``target`` the mtime ``mtime_ns``.
+
+    The mtime is set after the rename, because a rename on a CIFS mount resets
+    it. Return whether the filesystem kept the mtime, within the copy tolerance.
+    """
+    source.replace(target)
+    os.utime(target, ns=(mtime_ns, mtime_ns))
+    kept_ns = target.stat().st_mtime_ns
+    return abs(kept_ns - mtime_ns) <= TOLERANCE_SECONDS * 1_000_000_000
 
 
 def _temporary_path(dst_path: Path) -> Path:
@@ -106,10 +129,16 @@ def _write_temporary(src_path: Path, temporary: Path) -> tuple[int, int]:
     return copied, source_stat.st_mtime_ns
 
 
-def _preserve(dst_path: Path, now: datetime) -> Path:
-    """Rename the destination to its timestamped .bak name and return that name."""
+@dataclass(frozen=True)
+class _Backup:
+    path: Path
+    kept_mtime: bool
+
+
+def _preserve(dst_path: Path, now: datetime) -> _Backup:
+    """Rename the destination to its timestamped .bak name, keeping its mtime."""
     backup = dst_path.with_name(f"{dst_path.name}.{now:%Y%m%dT%H%M%SZ}.bak")
     if backup.exists():
         raise FileExistsError(f"backup already exists: {backup}")
-    dst_path.replace(backup)
-    return backup
+    mtime_ns = dst_path.stat().st_mtime_ns
+    return _Backup(path=backup, kept_mtime=_rename_keeping_mtime(dst_path, backup, mtime_ns))

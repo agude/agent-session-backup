@@ -66,21 +66,73 @@ def test_copy_to_missing_destination_matches_source(tmp_path: Path) -> None:
 def test_destination_gets_the_source_mtime_when_rename_resets_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A rename on a CIFS mount sets the mtime to the current time. Simulate that."""
-    real_replace = Path.replace
-
-    def resetting_replace(self: Path, target: Any) -> Path:
-        result = real_replace(self, target)
-        os.utime(target)
-        return result
-
-    monkeypatch.setattr(Path, "replace", resetting_replace)
+    resetting_replace(monkeypatch)
     source = tmp_path / "src.jsonl"
     source_stat = write(source, b"hello\n")
     dst = tmp_path / "archive" / "s1.jsonl"
     apply(source, dst, Action.COPY, NOW)
     assert dst.stat().st_mtime_ns == source_stat.st_mtime_ns
     assert decide(source.stat(), dst.stat()) is Action.SKIP
+
+
+def resetting_replace(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make Path.replace reset the target's mtime to now, as a CIFS rename does."""
+    real_replace = Path.replace
+    real_utime = os.utime
+
+    def replace(self: Path, target: Any) -> Path:
+        result = real_replace(self, target)
+        real_utime(target)
+        return result
+
+    monkeypatch.setattr(Path, "replace", replace)
+
+
+def test_backup_keeps_the_old_destination_mtime_when_rename_resets_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resetting_replace(monkeypatch)
+    source = tmp_path / "src.jsonl"
+    write(source, b"new\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    old_stat = write(dst, b"older content\n", mtime=BASE_MTIME - 100)
+    outcome = apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert outcome.backup is not None
+    assert outcome.backup.stat().st_mtime_ns == old_stat.st_mtime_ns
+
+
+def test_mtime_the_filesystem_does_not_keep_raises_after_the_copy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"hello\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    with pytest.raises(transfer.MtimeNotKeptError, match="did not keep the mtime of"):
+        apply(source, dst, Action.COPY, NOW)
+    assert dst.read_bytes() == b"hello\n"
+    assert [path.name for path in dst.parent.iterdir()] == ["s1.jsonl"]
+
+
+def test_unkept_backup_mtime_is_reported_with_the_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"new\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, b"older content\n", mtime=BASE_MTIME - 100)
+    resetting_replace(monkeypatch)
+    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    with pytest.raises(transfer.MtimeNotKeptError) as raised:
+        apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert BACKUP_NAME in str(raised.value)
+    assert dst.read_bytes() == b"new\n"
+    assert (dst.parent / BACKUP_NAME).read_bytes() == b"older content\n"
+
+
+def test_mtime_not_kept_is_an_os_error() -> None:
+    """The runner records OSError per file, so this error makes the run partial."""
+    assert issubclass(transfer.MtimeNotKeptError, OSError)
 
 
 def test_decide_skips_the_pair_after_a_copy(tmp_path: Path) -> None:
