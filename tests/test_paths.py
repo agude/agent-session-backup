@@ -51,12 +51,16 @@ def test_override_expands_tilde(home: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_state_dir_on_linux_uses_xdg_state_home(
     home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
     xdg = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(xdg))
     assert paths.state_dir() == xdg / "agent-session-backup"
 
 
-def test_state_dir_on_linux_defaults_to_local_state(home: Path) -> None:
+def test_state_dir_on_linux_defaults_to_local_state(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
     assert paths.state_dir() == home / ".local" / "state" / "agent-session-backup"
 
 

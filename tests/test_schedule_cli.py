@@ -11,6 +11,12 @@ from agent_session_backup.schedule import cron
 from tests.conftest import FakeCrontab
 
 
+@pytest.fixture(autouse=True)
+def linux_scheduler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise cron CLI cases even when the suite runs on macOS."""
+    monkeypatch.setattr(sys, "platform", "linux")
+
+
 def _write_program(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("#!/bin/sh\n", encoding="utf-8")
