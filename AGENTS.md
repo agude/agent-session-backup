@@ -37,10 +37,12 @@ CI pass.
   interrupted copy left behind. Tests record every unlink to check this.
 - Add a source only by extending an allowlist in `sources.py`. No other code
   may walk the tool homes or copy a path that the allowlist does not name.
-- Tests never touch the real home directory, the crontab, `launchctl`, or the
-  NAS. `tests/conftest.py` points the environment at a temporary directory, and
-  fake `crontab` and `launchctl` programs or injected runners stand in for the
-  real ones.
+- Tests never touch the real home directory, the crontab, `launchctl`, Task
+  Scheduler, or the NAS. `tests/conftest.py` points the environment at a
+  temporary directory, including `USERPROFILE` and `LOCALAPPDATA` for Windows,
+  and fake `crontab` and `launchctl` programs or injected runners stand in for
+  the real ones.
+- A SQLite database is copied only through `snapshot.take`, never as a live file.
 
 ## Rules
 

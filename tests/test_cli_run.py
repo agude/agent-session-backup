@@ -26,8 +26,8 @@ def test_run_copies_from_the_configured_homes(
     write_config(
         tmp_path,
         monkeypatch,
-        f'host = "dirac"\ndest_root = "{archive}"\n'
-        f'claude_home = "{claude}"\ncodex_home = "{tmp_path / "absent"}"\n',
+        f'host = "dirac"\ndest_root = "{archive.as_posix()}"\n'
+        f'claude_home = "{claude.as_posix()}"\ncodex_home = "{(tmp_path / "absent").as_posix()}"\n',
     )
     assert main(["run"]) == 0
     assert (archive / "dirac" / "claude" / "history.jsonl").read_bytes() == b"{}\n"
@@ -38,7 +38,7 @@ def test_run_strict_exits_three_when_the_destination_is_unavailable(
 ) -> None:
     archive = tmp_path / "nas"
     archive.mkdir()
-    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive}"\n')
+    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive.as_posix()}"\n')
     assert main(["run", "--strict"]) == 3
     assert main(["run"]) == 0
 

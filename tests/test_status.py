@@ -158,7 +158,7 @@ def test_parse_duration_accepts_units_and_rejects_a_bare_number() -> None:
 
 def _configure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dest: Path) -> None:
     config = tmp_path / "config.toml"
-    config.write_text(f'host = "dirac"\ndest_root = "{dest}"\n', encoding="utf-8")
+    config.write_text(f'host = "dirac"\ndest_root = "{dest.as_posix()}"\n', encoding="utf-8")
     monkeypatch.setenv("AGENT_SESSION_BACKUP_CONFIG", str(config))
 
 

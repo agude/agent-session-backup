@@ -122,9 +122,19 @@ def _run_status(args: argparse.Namespace) -> int:
     return status.report(config.dest_root, now=runner.utc_now(), max_age=args.max_age)
 
 
+def _default_executable() -> str:
+    """Return this program's path, normalized like os.path.abspath without resolving symlinks.
+
+    On Windows, a console-script launcher reports its path without ``.exe``.
+    """
+    path = os.path.normpath(Path.cwd() / sys.argv[0])
+    if sys.platform == "win32" and not Path(path).suffix and Path(f"{path}.exe").is_file():
+        return f"{path}.exe"
+    return path
+
+
 def _run_install_schedule(args: argparse.Namespace) -> int:
-    # Normalize like os.path.abspath, collapsing "..", without resolving symlinks.
-    executable = args.executable or os.path.normpath(Path.cwd() / sys.argv[0])
+    executable = args.executable or _default_executable()
     problem = schedule.validate_executable(executable)
     if problem is not None:
         _report(f"install-schedule: {problem}")

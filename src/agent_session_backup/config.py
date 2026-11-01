@@ -11,8 +11,13 @@ from pathlib import Path
 from agent_session_backup import paths
 
 HOST_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-_TOP_LEVEL_KEYS = frozenset({"host", "dest_root", "claude_home", "codex_home", "sources"})
-_SOURCE_KEYS = frozenset({"claude", "codex"})
+_TOP_LEVEL_KEYS = frozenset(
+    {"host", "dest_root", "claude_home", "codex_home", "claude_desktop_home", "sources"}
+)
+_SOURCE_KEYS = frozenset({"claude", "codex", "claude_desktop", "codex_sqlite"})
+# The Claude desktop app from the Microsoft Store keeps its data in its package's
+# redirected AppData; a direct install uses %APPDATA%\Claude.
+CLAUDE_STORE_PACKAGE = "AnthropicPBC.Claude_*"
 
 
 class ConfigError(Exception):
@@ -24,34 +29,52 @@ class ConfigError(Exception):
 
 @dataclass(frozen=True)
 class Sources:
-    """Which tools the backup reads."""
+    """Which tools the backup reads.
+
+    ``claude_desktop`` is the Claude desktop app's session metadata.
+    ``codex_sqlite`` is snapshots of the Codex thread databases, where the Codex
+    desktop app keeps conversations whose rollout files are gone.
+    """
 
     claude: bool = True
     codex: bool = True
+    claude_desktop: bool = True
+    codex_sqlite: bool = False
 
 
 @dataclass(frozen=True)
 class Config:
-    """The effective configuration, with every default applied."""
+    """The effective configuration, with every default applied.
+
+    ``claude_desktop_home`` is ``None`` when no Claude desktop app data exists.
+    """
 
     host: str
     dest_root: Path
     claude_home: Path
     codex_home: Path
     sources: Sources
+    claude_desktop_home: Path | None = None
 
 
 def load(path: Path | None = None) -> Config:
     """Load the configuration file and fill every missing key with its default.
 
     With no argument, the file is ``paths.config_file()``. A missing file yields
-    the defaults, except that macOS requires ``dest_root``.
+    the defaults, except that macOS and Windows require ``dest_root``.
+    ``sources.codex_sqlite`` defaults to true on Windows only.
     """
     config_path = paths.config_file() if path is None else path
     data = _read(config_path)
     _reject_unknown(config_path, data, _TOP_LEVEL_KEYS, prefix="")
     sources = _table(config_path, data, "sources")
     _reject_unknown(config_path, sources, _SOURCE_KEYS, prefix="sources.")
+    desktop_default = _claude_desktop_default()
+    desktop_home = (
+        _path(config_path, data, "claude_desktop_home", desktop_default)
+        if desktop_default is not None
+        else _optional_path(config_path, data, "claude_desktop_home")
+    )
     return Config(
         host=_host(config_path, data),
         dest_root=_dest_root(config_path, data),
@@ -60,7 +83,10 @@ def load(path: Path | None = None) -> Config:
         sources=Sources(
             claude=_flag(config_path, sources, "claude"),
             codex=_flag(config_path, sources, "codex"),
+            claude_desktop=_flag(config_path, sources, "claude_desktop"),
+            codex_sqlite=_flag(config_path, sources, "codex_sqlite", paths.is_windows()),
         ),
+        claude_desktop_home=desktop_home,
     )
 
 
@@ -101,8 +127,8 @@ def _string(path: Path, data: Mapping[str, object], key: str) -> str:
     return value
 
 
-def _flag(path: Path, sources: Mapping[str, object], key: str) -> bool:
-    value = sources.get(key, True)
+def _flag(path: Path, sources: Mapping[str, object], key: str, default: bool = True) -> bool:
+    value = sources.get(key, default)
     if not isinstance(value, bool):
         raise ConfigError(path, f"sources.{key} must be true or false")
     return value
@@ -123,6 +149,8 @@ def _dest_root(path: Path, data: Mapping[str, object]) -> Path:
         return Path(_string(path, data, "dest_root")).expanduser()
     if paths.is_macos():
         raise ConfigError(path, "dest_root is required on macOS")
+    if paths.is_windows():
+        raise ConfigError(path, "dest_root is required on Windows")
     return Path.home() / "synology" / "Archive" / "agent-sessions"
 
 
@@ -130,6 +158,31 @@ def _path(path: Path, data: Mapping[str, object], key: str, default: Path) -> Pa
     if key not in data:
         return default
     return Path(_string(path, data, key)).expanduser()
+
+
+def _optional_path(path: Path, data: Mapping[str, object], key: str) -> Path | None:
+    if key not in data:
+        return None
+    return Path(_string(path, data, key)).expanduser()
+
+
+def _claude_desktop_default() -> Path | None:
+    """Return the Claude desktop app's data directory, or ``None`` where none exists.
+
+    Only Windows is located automatically. The Store app keeps its data in its
+    package's redirected AppData; a direct install keeps it in ``%APPDATA%\\Claude``.
+    """
+    if not paths.is_windows():
+        return None
+    packages = paths.local_app_data() / "Packages"
+    candidates = sorted(packages.glob(CLAUDE_STORE_PACKAGE)) if packages.is_dir() else []
+    for package in candidates:
+        data = package / "LocalCache" / "Roaming" / "Claude"
+        if data.is_dir():
+            return data
+    roaming = os.environ.get("APPDATA", "")
+    direct = Path(roaming) / "Claude" if roaming else None
+    return direct if direct is not None and direct.is_dir() else None
 
 
 def _codex_default() -> Path:

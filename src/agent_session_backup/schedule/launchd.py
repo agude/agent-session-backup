@@ -2,6 +2,7 @@
 
 import os
 import plistlib
+import sys
 from pathlib import Path
 
 from agent_session_backup import paths
@@ -55,7 +56,7 @@ def install(
     as loaded. With ``dry_run``, return the same result, write no file, and run
     only ``launchctl print``.
     """
-    domain = f"gui/{os.getuid() if uid is None else uid}"
+    domain = f"gui/{_uid(uid)}"
     target = f"{domain}/{LABEL}"
     plist = plist_path()
     content = build_plist(executable, paths.state_dir() / LOG_NAME)
@@ -85,13 +86,22 @@ def uninstall(
     """
     if dry_run:
         return "removed" if plist_path().exists() else "absent"
-    domain = f"gui/{os.getuid() if uid is None else uid}"
+    domain = f"gui/{_uid(uid)}"
     _bootout(runner, f"{domain}/{LABEL}")
     plist = plist_path()
     if not plist.exists():
         return "absent"
     plist.unlink()
     return "removed"
+
+
+def _uid(uid: int | None) -> int:
+    """Return ``uid``, or the current user's id. Only POSIX systems have one."""
+    if uid is not None:
+        return uid
+    if sys.platform == "win32":
+        raise LaunchdError("launchd exists only on macOS")
+    return os.getuid()
 
 
 def _bootout(runner: Runner, target: str) -> None:

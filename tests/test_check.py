@@ -7,6 +7,7 @@ import pytest
 
 from agent_session_backup import destination, paths
 from agent_session_backup.cli import main
+from tests.conftest import READ_DENIAL
 
 HOST = "dirac"
 ORIGINAL = b'{"n": 1}\n' * 3
@@ -30,9 +31,9 @@ def _configure(
     config = tmp_path / "config.toml"
     config.write_text(
         f'host = "{HOST}"\n'
-        f'dest_root = "{archive}"\n'
-        f'claude_home = "{claude}"\n'
-        f'codex_home = "{tmp_path / "absent"}"\n',
+        f'dest_root = "{archive.as_posix()}"\n'
+        f'claude_home = "{claude.as_posix()}"\n'
+        f'codex_home = "{(tmp_path / "absent").as_posix()}"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT_SESSION_BACKUP_CONFIG", str(config))
@@ -116,7 +117,7 @@ def test_check_reports_configuration_errors_and_exits_two(
     assert "host" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_unreadable_directory_is_listed_as_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -131,7 +132,7 @@ def test_unreadable_directory_is_listed_as_an_error(
     assert "errors: 1" in capsys.readouterr().out
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_destination_that_cannot_be_read_is_listed_as_an_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

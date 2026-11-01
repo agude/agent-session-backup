@@ -1,9 +1,10 @@
 """Prevent overlapping runs with an exclusive, non-blocking lock."""
 
-import fcntl
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import BinaryIO
 
 LOCK_NAME = "run.lock"
 
@@ -24,10 +25,36 @@ def run_lock(state_dir: Path) -> Iterator[None]:
     lock_path = state_dir / LOCK_NAME
     with lock_path.open("a+b") as handle:
         try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
+            _acquire(handle)
+        except OSError as error:
             raise LockBusy(f"another run holds {lock_path}") from error
         try:
             yield
         finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            _release(handle)
+
+
+if sys.platform == "win32":
+    import msvcrt
+    import os
+
+    def _acquire(handle: BinaryIO) -> None:
+        """Lock byte 0. A lock cannot cover bytes past the end, so an empty file gets one."""
+        if os.fstat(handle.fileno()).st_size == 0:
+            handle.write(b"0")
+            handle.flush()
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+
+    def _release(handle: BinaryIO) -> None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _acquire(handle: BinaryIO) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _release(handle: BinaryIO) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

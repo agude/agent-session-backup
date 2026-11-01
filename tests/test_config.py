@@ -14,6 +14,8 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolate HOME, the hostname, the platform, and the environment variables."""
     home_dir = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
     monkeypatch.delenv("CODEX_HOME", raising=False)
     monkeypatch.delenv("AGENT_SESSION_BACKUP_CONFIG", raising=False)
     monkeypatch.setattr(socket, "gethostname", lambda: "Dirac.local")

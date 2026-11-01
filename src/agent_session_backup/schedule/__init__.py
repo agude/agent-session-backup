@@ -5,7 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from agent_session_backup.schedule import cron, launchd
+from agent_session_backup.schedule import cron, launchd, taskscheduler
 from agent_session_backup.schedule.commands import ScheduleError
 
 
@@ -22,6 +22,8 @@ def install(executable: str, *, dry_run: bool = False) -> str:
         return cron.install(executable, dry_run=dry_run)
     if sys.platform.startswith("darwin"):
         return launchd.install(executable, dry_run=dry_run)
+    if sys.platform == "win32":
+        return taskscheduler.install(executable, dry_run=dry_run)
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 
@@ -34,6 +36,8 @@ def uninstall(*, dry_run: bool = False) -> str:
         return cron.uninstall(dry_run=dry_run)
     if sys.platform.startswith("darwin"):
         return launchd.uninstall(dry_run=dry_run)
+    if sys.platform == "win32":
+        return taskscheduler.uninstall(dry_run=dry_run)
     raise UnsupportedPlatform(f"no scheduler backend for platform {sys.platform!r}")
 
 

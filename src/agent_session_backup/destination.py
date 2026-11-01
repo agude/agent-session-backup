@@ -1,10 +1,12 @@
 """Guard the destination: check that the NAS is mounted, and create it on first use."""
 
 import contextlib
+import ctypes
 import json
 import os
 import re
 import subprocess
+import sys
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -14,7 +16,9 @@ from pathlib import Path
 from agent_session_backup import __version__, paths
 
 SENTINEL_NAME = ".agent-session-backup-root"
-NETWORK_FILESYSTEMS = frozenset({"cifs", "smb3", "smbfs", "nfs", "nfs4"})
+NETWORK_FILESYSTEMS = frozenset({"cifs", "smb3", "smbfs", "nfs", "nfs4", "remote"})
+# GetDriveTypeW results, named as filesystem_type reports them on Windows.
+WINDOWS_DRIVE_TYPES = {2: "removable", 3: "fixed", 4: "remote", 5: "cdrom", 6: "ramdisk"}
 TIMEOUT_SECONDS = 30.0
 MOUNTINFO_PATH = Path("/proc/self/mountinfo")
 MOUNT_COMMAND = "/sbin/mount"
@@ -103,12 +107,33 @@ def _trigger_automount(dest_root: Path) -> None:
 
 
 def filesystem_type(path: Path) -> str:
-    """Return the filesystem type of the mount that holds ``path``."""
+    """Return the filesystem type of the mount that holds ``path``.
+
+    On Windows, a UNC path or a mapped network drive is ``remote``, and a local
+    drive is named by its drive type, such as ``fixed``.
+    """
+    if paths.is_windows():
+        return windows_filesystem_type(path)
     if paths.is_macos():
         entries = parse_mount_output(_mount_command_text())
     else:
         entries = parse_mountinfo(_mountinfo_text())
     return _owning_filesystem(path.resolve(), entries)
+
+
+def windows_filesystem_type(path: Path) -> str:
+    """Return ``remote`` for a UNC path or a network drive, else the drive's type."""
+    anchor = path.absolute().anchor
+    if anchor.startswith("\\\\"):
+        return "remote"
+    return WINDOWS_DRIVE_TYPES.get(_drive_type(anchor), "unknown")
+
+
+def _drive_type(root: str) -> int:
+    """Return GetDriveTypeW for a drive root such as ``C:\\``."""
+    if sys.platform != "win32":
+        raise OSError("drive types exist only on Windows")
+    return int(ctypes.windll.kernel32.GetDriveTypeW(root))
 
 
 def parse_mountinfo(text: str) -> list[tuple[str, str]]:

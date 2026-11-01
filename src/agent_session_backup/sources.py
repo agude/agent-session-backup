@@ -21,6 +21,16 @@ CODEX_PATTERNS: tuple[str, ...] = (
     "history.jsonl",
     "session_index.jsonl",
 )
+# The Claude desktop app's per-session metadata (titles, folders, settings), relative
+# to its data directory. Its transcripts are under CLAUDE_PATTERNS.
+CLAUDE_DESKTOP_PATTERNS: tuple[str, ...] = ("claude-code-sessions/**/*.json",)
+# The Codex thread databases. The Codex desktop app keeps conversations here after
+# their rollout files are gone. They are copied as consistent snapshots, never as
+# live files.
+CODEX_SQLITE_PATTERNS: tuple[str, ...] = (
+    "state_*.sqlite",
+    "thread_history_*.sqlite",
+)
 
 ErrorCallback = Callable[[Path, OSError], None]
 Segments = tuple[str, ...]
@@ -31,11 +41,13 @@ class SourceFile:
     """A file to copy.
 
     ``path`` is the absolute source path. ``relpath`` is the destination path under
-    the host directory, such as ``claude/projects/x/y.jsonl``.
+    the host directory, such as ``claude/projects/x/y.jsonl``. ``snapshot`` marks a
+    SQLite database, which is copied through a consistent snapshot.
     """
 
     path: Path
     relpath: PurePosixPath
+    snapshot: bool = False
 
 
 def iter_sources(config: Config, on_error: ErrorCallback | None = None) -> Iterator[SourceFile]:
@@ -47,19 +59,32 @@ def iter_sources(config: Config, on_error: ErrorCallback | None = None) -> Itera
     found: list[SourceFile] = []
     if config.sources.claude:
         found += _enumerate(config.claude_home, "claude", CLAUDE_PATTERNS, on_error)
+    if config.sources.claude_desktop and config.claude_desktop_home is not None:
+        found += _enumerate(
+            config.claude_desktop_home, "claude-desktop", CLAUDE_DESKTOP_PATTERNS, on_error
+        )
     if config.sources.codex:
         found += _enumerate(config.codex_home, "codex", CODEX_PATTERNS, on_error)
+    if config.sources.codex_sqlite:
+        found += _enumerate(
+            config.codex_home, "codex", CODEX_SQLITE_PATTERNS, on_error, snapshot=True
+        )
     yield from sorted(found, key=lambda source: source.relpath.as_posix())
 
 
 def _enumerate(
-    home: Path, prefix: str, patterns: Sequence[str], on_error: ErrorCallback | None
+    home: Path,
+    prefix: str,
+    patterns: Sequence[str],
+    on_error: ErrorCallback | None,
+    *,
+    snapshot: bool = False,
 ) -> list[SourceFile]:
     if not home.is_dir():
         return []
     segment_patterns = [tuple(pattern.split("/")) for pattern in patterns]
     return [
-        SourceFile(path=path, relpath=PurePosixPath(prefix, *segments))
+        SourceFile(path=path, relpath=PurePosixPath(prefix, *segments), snapshot=snapshot)
         for path, segments in _walk(home.absolute(), (), segment_patterns, on_error)
     ]
 

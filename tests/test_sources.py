@@ -1,12 +1,14 @@
 """Tests for the source file allowlist."""
 
 import os
+import sys
 from pathlib import Path
 
 import pytest
 
 from agent_session_backup.config import Config, Sources
 from agent_session_backup.sources import iter_sources
+from tests.conftest import READ_DENIAL
 
 CLAUDE_FILES = (
     "projects/a/s1.jsonl",
@@ -117,6 +119,8 @@ def test_symlinked_file_and_directory_are_skipped(homes: tuple[Path, Path]) -> N
 
 def test_fifos_are_skipped(homes: tuple[Path, Path]) -> None:
     claude, codex = homes
+    if sys.platform == "win32":
+        pytest.skip("Windows has no FIFOs")
     os.mkfifo(claude / "projects" / "a" / "pipe.jsonl")
     names, _ = scan(make_config(claude, codex))
     assert names == CLAUDE_SOURCES + CODEX_SOURCES
@@ -137,7 +141,7 @@ def test_disabled_codex_source_yields_only_claude_files(homes: tuple[Path, Path]
     assert all(name.startswith("claude/") for name in names)
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_unreadable_directory_is_reported_and_enumeration_continues(
     homes: tuple[Path, Path],
 ) -> None:
@@ -153,7 +157,7 @@ def test_unreadable_directory_is_reported_and_enumeration_continues(
     assert names == CLAUDE_SOURCES + CODEX_SOURCES
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_unreadable_directory_without_callback_raises_nothing(homes: tuple[Path, Path]) -> None:
     claude, codex = homes
     locked = claude / "projects" / "a" / "locked"

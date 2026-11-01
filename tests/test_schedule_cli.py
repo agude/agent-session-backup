@@ -8,7 +8,7 @@ import pytest
 
 from agent_session_backup.cli import main
 from agent_session_backup.schedule import cron
-from tests.conftest import FakeCrontab
+from tests.conftest import ON_WINDOWS, FakeCrontab
 
 
 @pytest.fixture(autouse=True)
@@ -55,6 +55,7 @@ def test_executable_under_the_temporary_directory_is_refused(
     assert not fake_crontab.state.exists()
 
 
+@pytest.mark.skipif(ON_WINDOWS, reason="Windows has no execute bit")
 def test_non_executable_file_is_refused(
     fake_crontab: FakeCrontab, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

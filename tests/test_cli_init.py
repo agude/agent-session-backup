@@ -18,7 +18,7 @@ def test_init_refuses_a_local_destination_and_creates_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     archive = tmp_path / "archive"
-    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive}"\n')
+    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive.as_posix()}"\n')
     monkeypatch.setattr(destination, "filesystem_type", lambda path: "ext4")
     assert main(["init"]) == 1
     assert not archive.exists()
@@ -29,7 +29,7 @@ def test_init_with_allow_local_writes_one_sentinel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     archive = tmp_path / "archive"
-    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive}"\n')
+    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive.as_posix()}"\n')
     assert main(["init", "--allow-local"]) == 0
     sentinel = archive / destination.SENTINEL_NAME
     first = sentinel.read_bytes()
@@ -49,7 +49,7 @@ def test_init_reports_unexpected_os_errors(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     archive = tmp_path / "archive"
-    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive}"\n')
+    write_config(tmp_path, monkeypatch, f'host = "dirac"\ndest_root = "{archive.as_posix()}"\n')
 
     def fail(dest_root: Path, host: str, *, allow_local: bool = False) -> bool:
         raise OSError("disk full")

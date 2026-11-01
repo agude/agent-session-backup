@@ -13,6 +13,9 @@ def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point HOME at a directory that does not exist and clear the related variables."""
     home_dir = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    monkeypatch.setattr(sys, "platform", "linux")
     for name in ("XDG_CONFIG_HOME", "XDG_STATE_HOME", paths.CONFIG_FILE_VARIABLE):
         monkeypatch.delenv(name, raising=False)
     return home_dir

@@ -17,7 +17,8 @@ to work without credentials. Otherwise, use an SSH URL.
 ## Set up
 
 1. Mount the NAS share. On macOS, add the share to Login Items so that it mounts
-   at login.
+   at login. On Windows, map a drive letter that reconnects at sign-in, or use a
+   `\\server\share` path.
 2. Write the configuration file. See [Configuration](#configuration).
 3. Create the destination once:
 
@@ -45,29 +46,43 @@ to work without credentials. Otherwise, use an SSH URL.
    ```
 
    On Linux, this adds a block to the crontab. On macOS, it installs a
-   LaunchAgent.
+   LaunchAgent. On Windows, it registers a Task Scheduler task. See
+   [Windows](#windows).
 
 ## Configuration
 
 The configuration file is `$XDG_CONFIG_HOME/agent-session-backup/config.toml`.
-Without `XDG_CONFIG_HOME`, the file is `~/.config/agent-session-backup/config.toml`,
-on Linux and on macOS. `AGENT_SESSION_BACKUP_CONFIG` replaces the path. Unknown
-keys are errors.
+Without `XDG_CONFIG_HOME`, the file is `~/.config/agent-session-backup/config.toml`
+on Linux and on macOS, and `%LOCALAPPDATA%\agent-session-backup\config.toml` on
+Windows. `AGENT_SESSION_BACKUP_CONFIG` replaces the path. Unknown keys are errors.
 
 | Key | Default |
 | --- | --- |
 | `host` | The short hostname, lowercased. Letters, digits, and hyphens only. |
-| `dest_root` | Linux: `~/synology/Archive/agent-sessions`. macOS: required. |
+| `dest_root` | Linux: `~/synology/Archive/agent-sessions`. macOS and Windows: required. |
 | `claude_home` | `~/.claude` |
 | `codex_home` | `$CODEX_HOME`, or `~/.codex` |
+| `claude_desktop_home` | Windows: the Claude desktop app's data directory, if it exists. Elsewhere: none. |
 | `[sources] claude` | `true` |
 | `[sources] codex` | `true` |
+| `[sources] claude_desktop` | `true` |
+| `[sources] codex_sqlite` | Windows: `true`. Elsewhere: `false`. |
 
 A macOS configuration must set `dest_root`:
 
 ```toml
 dest_root = "/Volumes/<share>/Archive/agent-sessions"
 ```
+
+So must a Windows configuration. A TOML literal string keeps the backslashes:
+
+```toml
+dest_root = 'Z:\Archive\agent-sessions'
+```
+
+On Windows, `claude_desktop_home` is found automatically: the Microsoft Store
+app's `%LOCALAPPDATA%\Packages\AnthropicPBC.Claude_*\LocalCache\Roaming\Claude`,
+then a direct install's `%APPDATA%\Claude`.
 
 ## Commands
 
@@ -115,8 +130,9 @@ Logs go to `backup.log` in the state directory. On Linux, that is
 `$XDG_STATE_HOME/agent-session-backup`, which defaults to
 `~/.local/state/agent-session-backup`. On macOS, it is
 `~/Library/Logs/agent-session-backup`, where the LaunchAgent also writes
-`launchd.log`. The state directory also holds `run.lock`, which prevents
-overlapping runs.
+`launchd.log`. On Windows, it is `%LOCALAPPDATA%\agent-session-backup`, unless
+`XDG_STATE_HOME` is set. The state directory also holds `run.lock`, which
+prevents overlapping runs, and the database snapshots described below.
 
 ## What is backed up
 
@@ -132,15 +148,33 @@ Codex (`$CODEX_HOME`, or `~/.codex`):
 - `archived_sessions/**/*.jsonl`
 - `history.jsonl`
 - `session_index.jsonl`
+- With `[sources] codex_sqlite`: `state_*.sqlite` and `thread_history_*.sqlite`
+
+The Codex desktop app keeps its conversations in `thread_history_*.sqlite` and
+removes most rollout files, so on Windows the databases are the only copy of
+most threads. `state_*.sqlite` holds each thread's title, folder, and source.
+
+Claude desktop app (`claude_desktop_home`), with `[sources] claude_desktop`:
+
+- `claude-code-sessions/**/*.json`: each session's title, folder, and settings,
+  and the app's scheduled tasks. The transcripts themselves are under
+  `~/.claude/projects`.
 
 Nothing else is copied. The backup never copies credentials (`auth.json`,
-`.credentials.json`), SQLite databases, `file-history/`, `todos/`, or
+`.credentials.json`), other SQLite databases, `file-history/`, `todos/`, or
 `settings.json`. It skips symbolic links, FIFOs, and sockets, and it does not
 follow a symbolic link to a directory.
 
-Each file lands at `<dest_root>/<host>/claude/<path>` or
-`<dest_root>/<host>/codex/<path>`, where `<path>` is relative to the source home.
-Each host also has a `.last-run.json` record.
+Each file lands at `<dest_root>/<host>/claude/<path>`,
+`<dest_root>/<host>/claude-desktop/<path>`, or `<dest_root>/<host>/codex/<path>`,
+where `<path>` is relative to the source home. Each host also has a
+`.last-run.json` record.
+
+A database is never copied as a live file, because the app may be writing it.
+When the database or its `-wal` file is newer than the copy on the NAS, the run
+writes a consistent snapshot with SQLite's online backup to
+`<state>/snapshots/codex/<name>`, gives it the source mtime, and copies the
+snapshot by the rules below. An unchanged database costs only two `stat` calls.
 
 ## How copies work
 
@@ -176,7 +210,34 @@ from:
   `~/.codex/<path>` when `CODEX_HOME` is unset.
 
 A Claude session file restored into `~/.claude/projects/<slug>/` appears in
-`claude --resume`.
+`claude --resume`. Restore a Codex database only while Codex is closed, and
+delete its old `-wal` and `-shm` files first, because they belong to the old
+database.
+
+## Windows
+
+Install the tool, configure `dest_root`, and run `init` and `check` as above.
+Run `install-schedule` in a normal terminal. The task is named
+`agent-session-backup`. It runs `agent-session-backup run` every hour through
+`conhost --headless`, so no console window opens, and:
+
+- only while you are signed in, so it sees mapped drives and network credentials;
+- only while a network connection is up;
+- once when the machine is next available after a missed run;
+- never while a previous run is still going.
+
+The task definition is kept as `task.xml` in the state directory. A repeated
+`install-schedule` reports `unchanged` when that file matches and the task
+exists. `uninstall-schedule` deletes the task and the file.
+
+Run `uv tool install`, `init`, and `install-schedule` outside the Claude desktop
+app. The Store app is packaged, and Windows redirects what its processes write
+under `AppData` into the app's private storage, where the scheduled task cannot
+see a configuration or a tool installed from inside it.
+
+Windows limits a path to 260 characters unless long paths are enabled. A
+Claude desktop file under `Z:\Archive\agent-sessions` needs about 200, so keep
+`dest_root` short, or enable long paths.
 
 ## Development
 

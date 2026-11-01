@@ -19,6 +19,7 @@ from agent_session_backup.destination import (
     filesystem_type,
     init,
 )
+from tests.conftest import ON_WINDOWS, READ_DENIAL
 
 MOUNTINFO_AUTOFS_THEN_CIFS = "\n".join(
     [
@@ -61,7 +62,7 @@ def test_check_reports_a_path_that_is_not_a_directory(tmp_path: Path) -> None:
     assert check(plain) == Unavailable("dest_root is not a directory")
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_check_reports_an_unreadable_directory(tmp_path: Path) -> None:
     locked = tmp_path / "locked"
     locked.mkdir()
@@ -93,6 +94,7 @@ def test_check_abandons_a_hung_listing_after_the_timeout(
     assert time.monotonic() - started < 1
 
 
+@pytest.mark.skipif(ON_WINDOWS, reason="POSIX mount points")
 def test_filesystem_type_uses_the_last_entry_at_a_shared_mount_point(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -103,6 +105,7 @@ def test_filesystem_type_uses_the_last_entry_at_a_shared_mount_point(
     assert filesystem_type(Path("/mnt/synology")) == "cifs"
 
 
+@pytest.mark.skipif(ON_WINDOWS, reason="POSIX mount points")
 def test_filesystem_type_prefers_the_longest_mount_point(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -115,6 +118,7 @@ def test_filesystem_type_prefers_the_longest_mount_point(
     assert filesystem_type(Path("/mnt/my share/archive")) == "nfs4"
 
 
+@pytest.mark.skipif(ON_WINDOWS, reason="POSIX mount points")
 def test_filesystem_type_parses_macos_mount_output(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(

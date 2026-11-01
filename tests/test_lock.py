@@ -21,12 +21,12 @@ def _try_lock(state_dir: str) -> None:
 
 
 def _child_exit_code(state_dir: Path) -> int:
-    context = multiprocessing.get_context("fork")
-    process = context.Process(target=_try_lock, args=(str(state_dir),))
+    process = multiprocessing.Process(target=_try_lock, args=(str(state_dir),))
     process.start()
     process.join(timeout=30)
-    assert process.exitcode is not None
-    return process.exitcode
+    exitcode = process.exitcode
+    assert isinstance(exitcode, int)
+    return exitcode
 
 
 def test_child_process_is_refused_while_the_parent_holds_the_lock(tmp_path: Path) -> None:

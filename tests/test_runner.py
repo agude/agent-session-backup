@@ -13,6 +13,7 @@ from agent_session_backup import destination
 from agent_session_backup.config import Config, Sources
 from agent_session_backup.lock import run_lock
 from agent_session_backup.runner import configure_logging, run_pass
+from tests.conftest import READ_DENIAL
 
 HOST = "dirac"
 T0 = datetime(2026, 10, 26, 18, 0, 0, tzinfo=UTC)
@@ -142,7 +143,7 @@ def test_truncated_source_keeps_the_old_copy_as_a_backup(world: World) -> None:
     assert (world.host_dir / "claude" / "history.jsonl").read_bytes() == b"x"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any file")
+@READ_DENIAL
 def test_unreadable_source_makes_the_run_partial(world: World) -> None:
     locked = world.claude / "history.jsonl"
     locked.chmod(0)
@@ -194,7 +195,7 @@ def test_last_run_record_has_the_documented_keys(world: World) -> None:
     assert record["errors"] == []
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any file")
+@READ_DENIAL
 def test_last_success_survives_a_partial_run(world: World) -> None:
     _run(world)
     locked = world.claude / "projects" / "a" / "memory"
@@ -209,7 +210,7 @@ def test_last_success_survives_a_partial_run(world: World) -> None:
     assert record["last_success"] == STAMP
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any file")
+@READ_DENIAL
 @pytest.mark.parametrize("previous", ["not json", "[]"])
 def test_partial_run_without_a_usable_previous_record_has_null_last_success(
     world: World, previous: str
@@ -242,7 +243,7 @@ def test_same_size_destination_newer_than_tolerance_is_preserved(world: World) -
     assert target.read_bytes() == ORIGINAL
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read any directory")
+@READ_DENIAL
 def test_unreadable_directory_makes_the_run_partial(world: World) -> None:
     locked = world.claude / "projects" / "a" / "memory"
     locked.chmod(0)

@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import sqlite3
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from agent_session_backup import __version__, destination
+from agent_session_backup import __version__, destination, snapshot
 from agent_session_backup.config import Config
 from agent_session_backup.lock import LockBusy, run_lock
 from agent_session_backup.sources import SourceFile, iter_sources
@@ -19,6 +20,8 @@ from agent_session_backup.transfer import Action, apply, decide
 LOGGER_NAME = "agent_session_backup"
 LOG_FILE_NAME = "backup.log"
 LAST_RUN_NAME = ".last-run.json"
+# Database snapshots are written here, under the state directory, before they are copied.
+SNAPSHOT_DIR_NAME = "snapshots"
 MAX_LOG_BYTES = 1024 * 1024
 LOG_BACKUP_COUNT = 3
 MAX_RECORDED_ERRORS = 20
@@ -87,7 +90,7 @@ def run_pass(
     started = now()
     try:
         with run_lock(state_dir):
-            return _run_locked(config, started, now, strict=strict)
+            return _run_locked(config, state_dir, started, now, strict=strict)
     except LockBusy:
         logger.info("another run is in progress; nothing copied")
         return EXIT_OK
@@ -106,6 +109,12 @@ def check_pass(config: Config, *, verbose: bool = False) -> int:
         f"claude_home: {config.claude_home} ({'enabled' if config.sources.claude else 'disabled'})"
     )
     print(f"codex_home: {config.codex_home} ({'enabled' if config.sources.codex else 'disabled'})")
+    desktop = config.claude_desktop_home or "not found"
+    print(
+        f"claude_desktop_home: {desktop} "
+        f"({'enabled' if config.sources.claude_desktop else 'disabled'})"
+    )
+    print(f"codex_sqlite: {'enabled' if config.sources.codex_sqlite else 'disabled'}")
     status = destination.check(config.dest_root)
     if isinstance(status, destination.Unavailable):
         print(f"destination: unavailable: {status.reason}")
@@ -120,7 +129,7 @@ def check_pass(config: Config, *, verbose: bool = False) -> int:
 
     for source in iter_sources(config, record_error):
         try:
-            action = decide(source.path.stat(), _stat_or_none(host_dir / source.relpath))
+            action = _planned_action(source, _stat_or_none(host_dir / source.relpath))
         except OSError as error:
             errors.append((str(source.path), str(error)))
             continue
@@ -135,8 +144,20 @@ def check_pass(config: Config, *, verbose: bool = False) -> int:
     return EXIT_OK
 
 
+def _planned_action(source: SourceFile, target: os.stat_result | None) -> Action:
+    """The action for a source. A database is planned from its mtime, without a snapshot."""
+    if source.snapshot:
+        return snapshot.plan(snapshot.source_mtime_ns(source.path), target)
+    return decide(source.path.stat(), target)
+
+
 def _run_locked(
-    config: Config, started: datetime, now: Callable[[], datetime], *, strict: bool
+    config: Config,
+    state_dir: Path,
+    started: datetime,
+    now: Callable[[], datetime],
+    *,
+    strict: bool,
 ) -> int:
     status = destination.check(config.dest_root)
     if isinstance(status, destination.Unavailable):
@@ -152,7 +173,7 @@ def _run_locked(
         _record_error(tally, path, error)
 
     for source in iter_sources(config, record_error):
-        _copy(source, host_dir, started, tally)
+        _copy(source, host_dir, started, tally, state_dir / SNAPSHOT_DIR_NAME)
     finished = now()
     _write_last_run(host_dir, config.host, started, finished, tally)
     logger.info(
@@ -167,15 +188,26 @@ def _run_locked(
     return EXIT_PARTIAL if tally.errors else EXIT_OK
 
 
-def _copy(source: SourceFile, host_dir: Path, started: datetime, tally: Tally) -> None:
+def _copy(
+    source: SourceFile, host_dir: Path, started: datetime, tally: Tally, snapshot_dir: Path
+) -> None:
+    """Copy one source. A database is first snapshotted into ``snapshot_dir``."""
     target = host_dir / source.relpath
     try:
-        action = decide(source.path.stat(), _stat_or_none(target))
+        target_stat = _stat_or_none(target)
+        if _planned_action(source, target_stat) is Action.SKIP:
+            tally.skipped += 1
+            return
+        path = source.path
+        if source.snapshot:
+            path = snapshot_dir / source.relpath
+            snapshot.take(source.path, path)
+        action = decide(path.stat(), target_stat)
         if action is Action.SKIP:
             tally.skipped += 1
             return
-        outcome = apply(source.path, target, action, started)
-    except OSError as error:
+        outcome = apply(path, target, action, started)
+    except (OSError, sqlite3.Error) as error:
         _record_error(tally, source.path, error)
         return
     if action is Action.COPY:
