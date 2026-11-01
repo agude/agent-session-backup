@@ -239,12 +239,18 @@ Windows limits a path to 260 characters unless long paths are enabled. A
 Claude desktop file under `Z:\Archive\agent-sessions` needs about 200, so keep
 `dest_root` short, or enable long paths.
 
+Save `config.toml` without a byte-order mark. Windows PowerShell 5.1's
+`Set-Content -Encoding utf8` writes one, and the parser rejects it with
+"invalid TOML". Use `-Encoding ascii` for this file, since it holds only ASCII.
+
 ## Development
 
 Requires [uv](https://docs.astral.sh/uv/) 0.13 or newer and [just](https://just.systems/).
 
-The `.python-version` file selects Python 3.15. uv 0.13 or newer can
-download its final release. The lower uv minimum in `pyproject.toml` lets
+The `.python-version` file selects Python 3.15. On Windows, pass `--python 3.14`
+to `uv sync` and `uv run`: PyYAML, a dev dependency, has no Windows wheel for
+3.15 yet, so uv would build it and need the Microsoft C++ Build Tools. uv 0.13
+or newer can download its final release. The lower uv minimum in `pyproject.toml` lets
 Dependabot update the lock on Python 3.11; CI tests that minimum.
 
 ```sh
