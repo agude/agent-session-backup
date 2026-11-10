@@ -152,3 +152,17 @@ def test_invalid_values_name_the_file_and_key(
         load(path)
     assert str(path) in str(info.value)
     assert key in str(info.value)
+
+
+def test_leading_byte_order_mark_is_accepted(tmp_path: Path, home: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_bytes('host = "maxwell"\r\n'.encode("utf-8-sig"))
+    assert load(path).host == "maxwell"
+
+
+def test_utf16_file_is_a_config_error(tmp_path: Path, home: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_bytes('host = "maxwell"\r\n'.encode("utf-16"))
+    with pytest.raises(ConfigError, match="the file is not UTF-8") as info:
+        load(path)
+    assert str(path) in str(info.value)

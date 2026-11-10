@@ -1,6 +1,7 @@
 """Command-line interface for agent-session-backup."""
 
 import argparse
+import io
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -166,8 +167,21 @@ _COMMANDS: dict[str, Callable[[argparse.Namespace], int]] = {
 }
 
 
+def _tolerate_unencodable_output() -> None:
+    """Escape characters that stdout or stderr cannot encode, instead of raising.
+
+    Redirected output on Windows uses the ANSI code page, such as cp1252, unless
+    UTF-8 mode is on. A path outside that code page then printed as a
+    UnicodeEncodeError traceback. It now prints with backslash escapes.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(errors="backslashreplace")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run agent-session-backup and return its exit status."""
+    _tolerate_unencodable_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:

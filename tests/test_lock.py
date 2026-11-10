@@ -1,10 +1,13 @@
 """Tests for the run lock."""
 
+import errno
 import multiprocessing
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from agent_session_backup import lock
 from agent_session_backup.lock import LOCK_NAME, LockBusy, run_lock
 
 ACQUIRED_EXIT = 10
@@ -56,3 +59,15 @@ def test_lock_file_is_never_deleted(tmp_path: Path) -> None:
     with run_lock(tmp_path):
         pass
     assert (tmp_path / LOCK_NAME).is_file()
+
+
+def test_a_lock_error_other_than_contention_propagates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing_acquire(handle: Any) -> None:
+        raise OSError(errno.EIO, "simulated I/O error")
+
+    monkeypatch.setattr(lock, "_acquire", failing_acquire)
+    with pytest.raises(OSError, match="simulated I/O error") as raised, run_lock(tmp_path):
+        pass
+    assert not isinstance(raised.value, LockBusy)

@@ -85,7 +85,9 @@ def run_pass(
     """Perform one backup pass and return its exit status.
 
     If another run holds the lock, the pass copies nothing and returns 0. With
-    ``strict``, an unavailable destination returns 3 instead of 0.
+    ``strict``, an unavailable destination returns 3 instead of 0. An OSError
+    outside the per-file copies, such as a lock file that cannot be opened or a
+    last-run record that cannot be written, is logged and returns 1.
     """
     started = now()
     try:
@@ -94,6 +96,9 @@ def run_pass(
     except LockBusy:
         logger.info("another run is in progress; nothing copied")
         return EXIT_OK
+    except OSError as error:
+        logger.error("run failed: %s", error)
+        return EXIT_PARTIAL
 
 
 def check_pass(config: Config, *, verbose: bool = False) -> int:
@@ -210,6 +215,10 @@ def _copy(
     except (OSError, sqlite3.Error) as error:
         _record_error(tally, source.path, error)
         return
+    if outcome.identical:
+        tally.skipped += 1
+        logger.debug("restored the mtime of %s", source.relpath.as_posix())
+        return
     if action is Action.COPY:
         tally.copied += 1
     else:
@@ -280,7 +289,7 @@ def _read_previous(record_path: Path) -> dict[str, object] | None:
 def _write_atomically(path: Path, text: str) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
     try:
-        with temporary.open("w", encoding="utf-8") as handle:
+        with temporary.open("w", encoding="utf-8", newline="") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())

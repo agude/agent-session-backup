@@ -91,13 +91,23 @@ def load(path: Path | None = None) -> Config:
 
 
 def _read(path: Path) -> dict[str, object]:
+    """Parse the file as UTF-8 TOML. A leading byte-order mark is dropped.
+
+    Windows PowerShell 5.1 writes UTF-8 with a byte-order mark, and its ``>``
+    and ``Out-File`` write UTF-16, which is reported as an encoding error.
+    """
     try:
-        with path.open("rb") as handle:
-            return tomllib.load(handle)
+        data = path.read_bytes()
     except FileNotFoundError:
         return {}
     except OSError as error:
         raise ConfigError(path, f"cannot read the file: {error}") from error
+    try:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise ConfigError(path, f"the file is not UTF-8: {error}") from error
+    try:
+        return tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(path, f"invalid TOML: {error}") from error
 

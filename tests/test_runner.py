@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from agent_session_backup import destination
+from agent_session_backup import destination, runner
 from agent_session_backup.config import Config, Sources
 from agent_session_backup.lock import run_lock
 from agent_session_backup.runner import configure_logging, run_pass
@@ -299,8 +299,55 @@ def test_failed_last_run_write_leaves_no_temporary_file(
     monkeypatch.setattr(Path, "unlink", spy_path_unlink)
     # The second pass skips every file, so the record write is the only fsync in it.
     monkeypatch.setattr(os, "fsync", failing_fsync)
-    with pytest.raises(OSError, match="simulated fsync failure"):
-        _run(world, when=T0 + timedelta(hours=1))
+    assert _run(world, when=T0 + timedelta(hours=1)) == 1
+    assert "run failed: simulated fsync failure" in _log(world)
     assert list(world.host_dir.glob(".last-run.json.*.tmp")) == []
     assert unlinked
     assert all(path.endswith(".tmp") for path in unlinked)
+
+
+def test_identical_destination_newer_than_tolerance_gets_the_source_mtime(world: World) -> None:
+    _run(world)
+    source = world.claude / "history.jsonl"
+    target = world.host_dir / "claude" / "history.jsonl"
+    stamp = source.stat().st_mtime
+    os.utime(target, (stamp + 3600, stamp + 3600))
+    assert _run(world, when=T0 + timedelta(hours=1)) == 0
+    record = _record(world)
+    assert record["counts"]["preserved"] == 0
+    assert record["counts"]["skipped"] == len(EXPECTED)
+    assert list(target.parent.glob("*.bak")) == []
+    assert target.stat().st_mtime_ns == source.stat().st_mtime_ns
+
+
+def test_destination_that_ignores_mtime_keeps_no_backups_across_runs(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hour_ago = T0.timestamp() - 3600
+    for home in (world.config.claude_home, world.config.codex_home):
+        for path in home.rglob("*"):
+            if path.is_file():
+                os.utime(path, (hour_ago, hour_ago))
+    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    for hour in range(3):
+        assert _run(world, when=T0 + timedelta(hours=hour)) == 1
+        assert _record(world)["counts"]["preserved"] == 0
+    assert list(world.host_dir.rglob("*.bak")) == []
+    assert "did not keep the mtime" in _log(world)
+
+
+def test_lock_that_cannot_be_opened_is_logged_and_exits_one(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def failing_lock(state_dir: Path) -> Any:
+        raise PermissionError("simulated lock failure")
+
+    monkeypatch.setattr(runner, "run_lock", failing_lock)
+    assert _run(world) == 1
+    assert "run failed: simulated lock failure" in _log(world)
+    assert _copied(world) == []
+
+
+def test_last_run_record_has_lf_line_endings(world: World) -> None:
+    _run(world)
+    assert b"\r\n" not in (world.host_dir / ".last-run.json").read_bytes()
