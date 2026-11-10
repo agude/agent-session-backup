@@ -130,12 +130,13 @@ def _emulate_crontab(fake: FakeCrontab, monkeypatch: pytest.MonkeyPatch) -> None
             log.write(" ".join(args[1:]) + "\n")
         if args[1:] == ["-l"]:
             if fake.state.exists():
-                return subprocess.CompletedProcess(args, 0, fake.text(), "")
-            return subprocess.CompletedProcess(args, 1, "", "no crontab for tester\n")
+                return subprocess.CompletedProcess(args, 0, fake.state.read_bytes(), b"")
+            return subprocess.CompletedProcess(args, 1, b"", b"no crontab for tester\n")
         if args[1:] == ["-"]:
-            fake.state.write_text(keywords.get("input") or "", encoding="utf-8", newline="")
-            return subprocess.CompletedProcess(args, 0, "", "")
-        return subprocess.CompletedProcess(args, 2, "", f"unsupported arguments: {args[1:]}\n")
+            fake.state.write_bytes(keywords.get("input") or b"")
+            return subprocess.CompletedProcess(args, 0, b"", b"")
+        unsupported = f"unsupported arguments: {args[1:]}\n".encode()
+        return subprocess.CompletedProcess(args, 2, b"", unsupported)
 
     monkeypatch.setattr(subprocess, "run", run)
 

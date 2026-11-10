@@ -185,10 +185,15 @@ snapshot by the rules below. An unchanged database costs only two `stat` calls.
 | Same size, mtimes within 2 s | Skip. |
 | Same size, source newer by more than 2 s | Copy. |
 | Larger than the source | Rename the destination to `<name>.<UTC timestamp>.bak`, then copy. |
-| Same size, destination newer by more than 2 s | Rename the destination to `<name>.<UTC timestamp>.bak`, then copy. |
+| Same size, destination newer by more than 2 s, same bytes | Set the destination mtime to the source mtime. Copy nothing. |
+| Same size, destination newer by more than 2 s, different bytes | Rename the destination to `<name>.<UTC timestamp>.bak`, then copy. |
 
 Each copy is written to a temporary file, flushed to disk, and renamed into
 place. A reader sees either the old file or the new one.
+
+A destination that does not keep the mtime set on a copy makes the run
+partial, with an error for each such file. The next run finds the same bytes
+and sets the mtime again instead of keeping another `.bak` file.
 
 ## Status
 
@@ -239,9 +244,10 @@ Windows limits a path to 260 characters unless long paths are enabled. A
 Claude desktop file under `Z:\Archive\agent-sessions` needs about 200, so keep
 `dest_root` short, or enable long paths.
 
-Save `config.toml` without a byte-order mark. Windows PowerShell 5.1's
-`Set-Content -Encoding utf8` writes one, and the parser rejects it with
-"invalid TOML". Use `-Encoding ascii` for this file, since it holds only ASCII.
+Save `config.toml` as UTF-8. A leading byte-order mark, which Windows
+PowerShell 5.1's `Set-Content -Encoding utf8` writes, is accepted. UTF-16,
+which Windows PowerShell 5.1's `>` and `Out-File` write by default, is
+rejected with "the file is not UTF-8".
 
 ## Development
 

@@ -1,11 +1,12 @@
 """Tests for the agent-session-backup command-line interface."""
 
+import io
 import runpy
 import sys
 
 import pytest
 
-from agent_session_backup import __version__
+from agent_session_backup import __version__, cli
 from agent_session_backup.cli import main
 
 
@@ -25,3 +26,14 @@ def test_module_entry_point_runs_main(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit) as exit_info:
         runpy.run_module("agent_session_backup", run_name="__main__")
     assert exit_info.value.code == 0
+
+
+def test_unencodable_output_is_escaped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Redirected output on Windows is cp1252 unless UTF-8 mode is on."""
+    buffer = io.BytesIO()
+    stream = io.TextIOWrapper(buffer, encoding="cp1252", newline="\n")
+    monkeypatch.setattr(sys, "stdout", stream)
+    cli._tolerate_unencodable_output()
+    print("dest_root: Z:\\\u5907\u4efd")
+    stream.flush()
+    assert buffer.getvalue() == b"dest_root: Z:\\\\u5907\\u4efd\n"

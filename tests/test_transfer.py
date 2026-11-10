@@ -306,3 +306,67 @@ def test_only_temporary_files_are_unlinked(tmp_path: Path, monkeypatch: pytest.M
     apply(source, preserve_dst, Action.PRESERVE_AND_COPY, NOW)
     assert recorded
     assert all(path.endswith(".tmp") for path in recorded)
+
+
+def test_stale_cleanup_leaves_names_it_did_not_make(tmp_path: Path) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"hello\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    others = [".s1.jsonl.notes.tmp", ".s1.jsonl.12.x.tmp", ".s1.jsonl..tmp", "s1.jsonl.12.tmp"]
+    for name in others:
+        write(dst.with_name(name), b"not ours")
+    apply(source, dst, Action.COPY, NOW)
+    for name in others:
+        assert dst.with_name(name).read_bytes() == b"not ours"
+
+
+def test_identical_preserve_sets_the_mtime_and_keeps_no_backup(tmp_path: Path) -> None:
+    source = tmp_path / "src.jsonl"
+    source_stat = write(source, b"same\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, b"same\n", BASE_MTIME + 3600)
+    outcome = apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert outcome == Outcome(bytes_copied=0, backup=None, identical=True)
+    assert [path.name for path in dst.parent.iterdir()] == ["s1.jsonl"]
+    assert dst.stat().st_mtime_ns == source_stat.st_mtime_ns
+
+
+def test_identical_preserve_reports_an_mtime_the_filesystem_does_not_keep(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"same\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, b"same\n", BASE_MTIME + 3600)
+    monkeypatch.setattr(os, "utime", lambda *args, **kwargs: None)
+    with pytest.raises(transfer.MtimeNotKeptError, match=r"s1\.jsonl"):
+        apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert [path.name for path in dst.parent.iterdir()] == ["s1.jsonl"]
+
+
+@pytest.mark.parametrize(
+    "old",
+    [b"diff\n", b"same\n" + b"x" * transfer.CHUNK_SIZE],
+    ids=["same size", "longer"],
+)
+def test_different_bytes_are_still_preserved(tmp_path: Path, old: bytes) -> None:
+    source = tmp_path / "src.jsonl"
+    write(source, b"same\n")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, old, BASE_MTIME + 3600)
+    outcome = apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    assert outcome.backup == dst.with_name(BACKUP_NAME)
+    assert outcome.backup.read_bytes() == old
+    assert dst.read_bytes() == b"same\n"
+
+
+def test_same_bytes_compares_every_chunk(tmp_path: Path) -> None:
+    size = transfer.CHUNK_SIZE + 3
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    write(first, b"a" * size)
+    write(second, b"a" * (size - 1) + b"b")
+    assert not transfer._same_bytes(first, second)
+    write(second, b"a" * size)
+    assert transfer._same_bytes(first, second)
+    assert not transfer._same_bytes(first, tmp_path / "missing")
