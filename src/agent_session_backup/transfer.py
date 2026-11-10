@@ -83,10 +83,12 @@ def apply(src_path: Path, dst_path: Path, action: Action, now: datetime) -> Outc
     """
     if action is Action.SKIP:
         return Outcome(bytes_copied=0, backup=None)
-    if action is Action.PRESERVE_AND_COPY and _same_bytes(src_path, dst_path):
-        if not _set_mtime(dst_path, src_path.stat().st_mtime_ns):
-            raise MtimeNotKeptError(f"the filesystem did not keep the mtime of {dst_path}")
-        return Outcome(bytes_copied=0, backup=None, identical=True)
+    if action is Action.PRESERVE_AND_COPY:
+        same_mtime_ns = _mtime_if_same_bytes(src_path, dst_path)
+        if same_mtime_ns is not None:
+            if not _set_mtime(dst_path, same_mtime_ns):
+                raise MtimeNotKeptError(f"the filesystem did not keep the mtime of {dst_path}")
+            return Outcome(bytes_copied=0, backup=None, identical=True)
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     _remove_stale_temporaries(dst_path)
     temporary = _temporary_path(dst_path)
@@ -127,18 +129,29 @@ def _set_mtime(target: Path, mtime_ns: int) -> bool:
     return abs(kept_ns - mtime_ns) <= TOLERANCE_SECONDS * 1_000_000_000
 
 
-def _same_bytes(first: Path, second: Path) -> bool:
-    """Return whether two files have the same size and bytes. A missing file differs."""
+def _mtime_if_same_bytes(src_path: Path, dst_path: Path) -> int | None:
+    """Return the source mtime in nanoseconds if both files hold the same bytes, else None.
+
+    The mtime is taken from the open source before any byte is read. A source
+    that changes during the comparison then ends up newer than that mtime, so
+    the next run copies it instead of skipping a stale destination.
+    A missing destination differs.
+    """
     try:
-        if first.stat().st_size != second.stat().st_size:
-            return False
+        dst_size = dst_path.stat().st_size
     except FileNotFoundError:
-        return False
-    with first.open("rb") as one, second.open("rb") as other:
-        while chunk := one.read(CHUNK_SIZE):
-            if chunk != other.read(len(chunk)):
-                return False
-        return other.read(1) == b""
+        return None
+    with src_path.open("rb") as source:
+        source_stat = os.fstat(source.fileno())
+        if source_stat.st_size != dst_size:
+            return None
+        with dst_path.open("rb") as target:
+            while chunk := source.read(CHUNK_SIZE):
+                if chunk != target.read(len(chunk)):
+                    return None
+            if target.read(1) != b"":
+                return None
+    return source_stat.st_mtime_ns
 
 
 def _temporary_path(dst_path: Path) -> Path:

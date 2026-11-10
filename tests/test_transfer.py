@@ -364,9 +364,49 @@ def test_same_bytes_compares_every_chunk(tmp_path: Path) -> None:
     size = transfer.CHUNK_SIZE + 3
     first = tmp_path / "first"
     second = tmp_path / "second"
-    write(first, b"a" * size)
+    first_stat = write(first, b"a" * size)
     write(second, b"a" * (size - 1) + b"b")
-    assert not transfer._same_bytes(first, second)
+    assert transfer._mtime_if_same_bytes(first, second) is None
     write(second, b"a" * size)
-    assert transfer._same_bytes(first, second)
-    assert not transfer._same_bytes(first, tmp_path / "missing")
+    assert transfer._mtime_if_same_bytes(first, second) == first_stat.st_mtime_ns
+    assert transfer._mtime_if_same_bytes(first, tmp_path / "missing") is None
+
+
+def test_source_changed_during_the_comparison_is_copied_on_the_next_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The destination gets the mtime from before the comparison, not the edit's."""
+    source = tmp_path / "src.jsonl"
+    write(source, b"old!")
+    dst = tmp_path / "dst" / "s1.jsonl"
+    write(dst, b"old!", BASE_MTIME + 3600)
+    real_open = Path.open
+
+    class EditAtEnd:
+        """The destination handle. Its end-of-file check edits the source."""
+
+        def __init__(self, handle: IO[bytes]) -> None:
+            self.handle = handle
+
+        def __enter__(self) -> "EditAtEnd":
+            return self
+
+        def __exit__(self, *exc: object) -> None:
+            self.handle.close()
+
+        def read(self, size: int) -> bytes:
+            data = self.handle.read(size)
+            if data == b"":
+                write(source, b"new!", BASE_MTIME + 60)
+            return data
+
+    def editing_open(self: Path, *args: Any, **kwargs: Any) -> Any:
+        handle = real_open(self, *args, **kwargs)
+        return EditAtEnd(handle) if self == dst else handle
+
+    monkeypatch.setattr(Path, "open", editing_open)
+    outcome = apply(source, dst, Action.PRESERVE_AND_COPY, NOW)
+    monkeypatch.undo()
+    assert outcome.identical
+    assert dst.stat().st_mtime_ns == int(BASE_MTIME * 1_000_000_000)
+    assert decide(source.stat(), dst.stat()) is Action.COPY
